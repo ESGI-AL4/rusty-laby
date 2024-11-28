@@ -1,22 +1,18 @@
-use rusty_laby::{build_register_team_message, connect_to_server, receive_message, send_message};
-// Import from your lib.rs.
+use std::io;
+use std::net::TcpStream;
+use rusty_laby::TeamRegistration;
 
-fn main() -> std::io::Result<()> {
-    let mut stream = connect_to_server("localhost:8778")?;
+const ADDRESS: &str = "localhost:8778";
+
+fn main() -> io::Result<()> {
+    let stream = TcpStream::connect(ADDRESS)?;
     println!("Connected to server...");
 
-    let message = build_register_team_message("rusty-octopus");
-    send_message(&mut stream, &message.to_string())?;
-    println!("Message sent!");
+    let mut registration = TeamRegistration::new("rusty-octopusooooo", stream);
 
-    loop {
-        match receive_message(&mut stream) {
-            Ok(msg) => println!("Server: {}", msg),
-            Err(e) => {
-                println!("Failed to receive message: {}", e);
-                break;
-            }
-        }
+    match registration.register() {
+        Ok(token) => println!("Registration successful. Token: {}", token),
+        Err(e) => eprintln!("Registration failed: {}", e),
     }
 
     Ok(())
