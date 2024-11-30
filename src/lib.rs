@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde_json::{Value, json};
+pub const ADDRESS: &str = "localhost:8778";
 
 pub mod network {
     use super::*;
@@ -87,6 +88,50 @@ impl TeamRegistration {
                         return Ok(token.to_string());
                     }
                 },
+                Err(e) => println!("Failed to parse JSON: {}", e),
+            }
+        }
+    }
+
+    pub fn subscribe_player(&mut self, player_name: &str, registration_token: &str, mut stream: TcpStream) -> io::Result<()> {
+        let message = self.build_subscribe_message(player_name, registration_token);
+        network::send_message(&mut stream, &message)?;
+        println!("SubscribePlayer message sent!");
+
+        self.wait_for_subscription_result()
+    }
+
+    fn build_subscribe_message(&self, player_name: &str, registration_token: &str) -> String {
+        json!({
+            "SubscribePlayer": {
+                "name": player_name,
+                "registration_token": registration_token
+            }
+        }).to_string()
+    }
+
+    fn wait_for_subscription_result(&mut self) -> io::Result<()> {
+        loop {
+            let msg = network::receive_message(&mut self.stream)?;
+            println!("Server: {}", msg);
+
+            match json_utils::parse_json(&msg) {
+                Ok(json) => {
+                    if let Some(result) = json.get("SubscribePlayerResult") {
+                        match result.get("Ok") {
+                            Some(_) => {
+                                println!("Player subscription successful!");
+                                return Ok(());
+                            }
+                            None => {
+                                if let Some(err) = result.get("Err") {
+                                    eprintln!("Player subscription failed: {}", err);
+                                    return Err(io::Error::new(io::ErrorKind::Other, "Subscription failed"));
+                                }
+                            }
+                        }
+                    }
+                }
                 Err(e) => println!("Failed to parse JSON: {}", e),
             }
         }
