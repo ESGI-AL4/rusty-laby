@@ -95,10 +95,10 @@ impl TeamRegistration {
 
     pub fn subscribe_player(&mut self, player_name: &str, registration_token: &str, mut stream: TcpStream) -> io::Result<()> {
         let message = self.build_subscribe_message(player_name, registration_token);
+        println!("Server to send: {}", message);
         network::send_message(&mut stream, &message)?;
-        println!("SubscribePlayer message sent!");
-
-        self.wait_for_subscription_result()
+        println!("Subscribe message sent to server!");
+        self.wait_for_subscription_result(&mut stream)
     }
 
     fn build_subscribe_message(&self, player_name: &str, registration_token: &str) -> String {
@@ -110,9 +110,9 @@ impl TeamRegistration {
         }).to_string()
     }
 
-    fn wait_for_subscription_result(&mut self) -> io::Result<()> {
+    fn wait_for_subscription_result(&mut self, stream: &mut TcpStream) -> io::Result<()> {
         loop {
-            let msg = network::receive_message(&mut self.stream)?;
+            let msg = network::receive_message(stream)?;
             println!("Server: {}", msg);
 
             match json_utils::parse_json(&msg) {

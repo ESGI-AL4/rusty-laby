@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
             println!("Registration successful. Token: {}", token);
             let stream = TcpStream::connect(ADDRESS)?;
             match registration.subscribe_player("rusty_player", &token, stream){
-                Ok(_) => println!("Subscribed to player"),
+                Ok(_) => println!("Player subscribed"),
                 Err(e) => println!("Error subscribing to player: {:?}", e)
             }
         }
