@@ -1,24 +1,21 @@
-use std::io;
+use std::io::{self, BufRead, BufReader};
 use std::net::TcpStream;
-use rusty_laby::{TeamRegistration, ADDRESS};
+use rusty_laby::{GameStreamHandler, TeamRegistration, ADDRESS};
 
 fn main() -> io::Result<()> {
     let stream = TcpStream::connect(ADDRESS)?;
     println!("Connected to server...");
 
     let mut registration = TeamRegistration::new("rusty-ocho", stream);
+    let token = registration.register()?;
+    println!("Registration successful. Token: {}", token);
 
-    match registration.register() {
-        Ok(token) => {
-            println!("Registration successful. Token: {}", token);
-            let stream = TcpStream::connect(ADDRESS)?;
-            match registration.subscribe_player("rusty_player", &token, stream){
-                Ok(_) => println!("Player subscribed"),
-                Err(e) => println!("Error subscribing to player: {:?}", e)
-            }
-        }
-        Err(e) => eprintln!("Registration failed: {}", e),
-    }
+    let game_stream = TcpStream::connect(ADDRESS)?;
+    registration.subscribe_player("rusty_player", &token, game_stream.try_clone()?)?;
+    println!("Player subscribed successfully!");
+
+    let mut game_stream = GameStreamHandler::new(game_stream);
+    GameStreamHandler::handle(&mut game_stream);
 
     Ok(())
 }

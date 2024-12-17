@@ -1,11 +1,12 @@
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Write, BufRead, BufReader};
 use std::net::TcpStream;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde_json::{Value, json};
 pub const ADDRESS: &str = "localhost:8778";
 
 pub mod network {
+    use std::io::Read;
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
     use super::*;
 
     pub fn send_message(stream: &mut TcpStream, message: &str) -> io::Result<()> {
@@ -24,7 +25,7 @@ pub mod network {
         stream.read_exact(&mut buffer)?;
 
         String::from_utf8(buffer).map_err(|e| {
-            io::Error::new(io::ErrorKind::InvalidData, format!("Invalid UTF-8: {}", e))
+            io::Error::new(io::ErrorKind::InvalidData, format!("Invalid data: {}", e))
         })
     }
 
@@ -93,7 +94,7 @@ impl TeamRegistration {
         }
     }
 
-    pub fn subscribe_player(&mut self, player_name: &str, registration_token: &str, mut stream: TcpStream) -> io::Result<()> {
+    pub fn subscribe_player(&mut self, player_name: &str, registration_token: &str, mut stream: TcpStream) -> std::io::Result<String> {
         let message = self.build_subscribe_message(player_name, registration_token);
         println!("Server to send: {}", message);
         network::send_message(&mut stream, &message)?;
@@ -110,30 +111,93 @@ impl TeamRegistration {
         }).to_string()
     }
 
-    fn wait_for_subscription_result(&mut self, stream: &mut TcpStream) -> io::Result<()> {
+    fn wait_for_subscription_result(&mut self, stream: &mut TcpStream) -> io::Result<String> {
         loop {
             let msg = network::receive_message(stream)?;
-            println!("Server: {}", msg);
+            println!("Server - from subscription: {}", msg);
 
-            match json_utils::parse_json(&msg) {
-                Ok(json) => {
-                    if let Some(result) = json.get("SubscribePlayerResult") {
-                        match result.get("Ok") {
-                            Some(_) => {
-                                println!("Player subscription successful!");
-                                return Ok(());
-                            }
-                            None => {
-                                if let Some(err) = result.get("Err") {
-                                    eprintln!("Player subscription failed: {}", err);
-                                    return Err(io::Error::new(io::ErrorKind::Other, "Subscription failed"));
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => println!("Failed to parse JSON: {}", e),
+            let parsed_msg = json_utils::parse_json(&msg)?;
+            println!("Server - parsed subscription response: {}", parsed_msg["SubscribePlayerResult"]);
+
+            return Ok(parsed_msg["SubscribePlayerResult"].to_string());
+        }
+    }
+
+}
+
+pub struct GameStreamHandler {
+    stream: TcpStream,
+    directions: Vec<String>
+}
+
+impl GameStreamHandler {
+    pub fn new(stream: TcpStream) -> Self {
+        Self {
+            stream,
+            directions: vec![
+                "Front".to_string(),
+                "Right".to_string(),
+                "Back".to_string(),
+                "Left".to_string(),
+            ],}
+
+    }
+
+    fn decide_next_action(&self, radar_view: &serde_json::Value) -> serde_json::Value {
+        // Parse the RadarView to understand the surroundings
+        // For now, we assume a simple logic: always move "Right"
+        // In the future, this will involve analyzing the radar_view content.
+        // serde_json::Value::String("MoveTo".to_string())
+        json!({"MoveTo" : "Left"})
+    }
+    fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
+        let msg = network::receive_message(&mut self.stream)?;
+        println!("Server - received message: {}", msg);
+
+        let parsed_msg = json_utils::parse_json(&msg)?;
+        println!("Server - parsed response: {:?}", parsed_msg);
+
+        Ok(parsed_msg)
+    }
+    fn send_action(&mut self, action: &serde_json::Value) -> io::Result<()> {
+        let action_request = json!({ "Action": action }).to_string();
+        println!("Sending action to server: {}", action_request);
+        network::send_message(&mut self.stream, &action_request)?;
+
+        Ok(())
+    }
+    fn handle_action_response(&mut self) -> io::Result<()> {
+        let response = network::receive_message(&mut self.stream)?;
+        println!("Server - action response: {}", response);
+
+        let parsed_response = json_utils::parse_json(&response)?;
+        if let Some(action_error) = parsed_response.get("ActionError") {
+            println!("Action error from server: {:?}", action_error);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Exiting due to action error: {:?}", action_error),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn handle(&mut self) -> io::Result<()> {
+        loop {
+            let parsed_msg = self.receive_and_parse_message()?;
+
+            if let Some(radar_view) = parsed_msg.get("RadarView") {
+                println!("RadarView received: {:?}", radar_view);
+
+                let action = self.decide_next_action(radar_view);
+                self.send_action(&action)?;
+
+                // Handle the server's response
+                self.handle_action_response()?;
+            } else {
+                println!("Unexpected message from server: {:?}", parsed_msg);
             }
         }
     }
+
 }
