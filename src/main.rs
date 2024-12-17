@@ -15,7 +15,7 @@ fn main() -> io::Result<()> {
     println!("Player subscribed successfully!");
 
     let mut game_stream = GameStreamHandler::new(game_stream);
-    GameStreamHandler::handle(&mut game_stream);
+    let _ = GameStreamHandler::handle(&mut game_stream);
 
     Ok(())
 }
