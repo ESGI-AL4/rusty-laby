@@ -126,6 +126,13 @@ impl TeamRegistration {
 
 }
 
+enum Direction {
+    FRONT,
+    BACK,
+    RIGHT,
+    LEFT
+}
+
 pub struct GameStreamHandler {
     stream: TcpStream,
     directions: Vec<String>
@@ -144,7 +151,7 @@ impl GameStreamHandler {
 
     }
 
-    fn decide_next_action(&self) -> serde_json::Value {
+    fn decide_next_action(&self, ) -> serde_json::Value {
         // Parse the RadarView to understand the surroundings
         // For now, we assume a simple logic: always move "Right"
         // In the future, this will involve analyzing the radar_view content.
@@ -198,15 +205,15 @@ impl GameStreamHandler {
             let action = self.decide_next_action();
             self.send_action(&action)?;
 
-            // let parsed_msg = self.receive_and_parse_message()?;
-            //
-            // if let Some(radar_view) = parsed_msg.get("RadarView") {
-            //     println!("RadarView received: {:?}", radar_view);
-            //     let action = self.decide_next_action(radar_view);
-            //     self.send_action(&action)?;
-            //
-            //     self.handle_action_response()?;
-            // }
+        //     let parsed_msg = self.receive_and_parse_message()?;
+        //
+        //     if let Some(radar_view) = parsed_msg.get("RadarView") {
+        //         println!("RadarView received: {:?}", radar_view);
+        //         let action = self.decide_next_action(radar_view);
+        //         self.send_action(&action)?;
+        //
+        //         self.handle_action_response()?;
+        //     }
         }
     }
 }
