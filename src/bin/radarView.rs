@@ -22,9 +22,9 @@ struct Cell {
 
 #[derive(Debug, PartialEq)]
 struct RadarView {
-    horizontal_walls: Vec<Wall>, // 12 Walls
-    vertical_walls: Vec<Wall>,   // 12 Walls
-    cells: Vec<Cell>,           // 9 Cells
+    horizontal_walls: Vec<Wall>,
+    vertical_walls: Vec<Wall>,
+    cells: Vec<Cell>,
 }
 
 fn main() {
@@ -168,7 +168,6 @@ fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
 fn visualize_radar(radar_view: &RadarView) -> String {
     let mut output = String::new();
 
-    // Top horizontal walls
     output.push_str("##");
     for i in 0..3 {
         output.push(match radar_view.horizontal_walls[i] {
@@ -180,7 +179,6 @@ fn visualize_radar(radar_view: &RadarView) -> String {
     }
     output.push_str("##\n");
 
-    // Vertical walls and cells
     for row in 0..3 {
         output.push_str("##");
         for col in 0..4 {
@@ -224,17 +222,20 @@ mod tests {
     fn test_decode_visualize() {
         let encoded = "ieysGjGO8papd/a";
         let radar_view = decode_radar_view(encoded).unwrap();
+        println!("{:?}", radar_view);
         let visualization = visualize_radar(&radar_view);
         println!("{}", visualization);
 
-        let expected_visualization = "##•-• •-•##\n\
+        let expected_visualization = "\
+        ##•-• •-•##\n\
         ##|   |##\n\
         •-• •-•\n\
         ##|   |##\n\
         • • •\n\
         ##|   |##\n\
         •-• •-•\n\
-        ##|   |##\n";
+        ##|   |##\n\
+        ";
 
         assert_eq!(visualization, expected_visualization);
     }
