@@ -121,6 +121,7 @@ fn decode(encoded: &str) -> Result<Vec<u8>, String> {
 
 fn decode_radar_view(encoded: &str) -> Result<RadarView, String> {
     let decoded_bytes = decode(encoded)?;
+    println!("{:?}", decoded_bytes);
 
     if decoded_bytes.len() != 11 {
         return Err("Invalid decoded data length".to_string());
@@ -167,7 +168,7 @@ fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
 
 fn visualize_radar(radar_view: &RadarView) -> String {
     let mut output = String::new();
-
+    println!("{:?}", radar_view);
     output.push_str("##");
     for i in 0..3 {
         output.push(match radar_view.horizontal_walls[i] {
