@@ -342,6 +342,8 @@ mod tests {
         let test_string = "Hello Radar!";
         let encoded = encode_custom_b64(test_string.as_bytes());
         let decoded = decode_custom_b64(&encoded).unwrap();
+        println!("Encoded: {}", encoded);
+        println!("Decoded: {:?}", decoded);
         assert_eq!(decoded, test_string.as_bytes());
 
         // 4) Test sur string vide
