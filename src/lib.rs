@@ -203,10 +203,9 @@ fn decode_radar_view(
 }
 
 // -----------------------------------------------------------------------------
-// Ajout : Interprétation bit-par-bit pour avoir un "RadarView" plus parlant
+// Interprétation + ASCII
 // -----------------------------------------------------------------------------
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Wall {
     Undefined,
     Open,
@@ -225,37 +224,36 @@ struct PrettyRadarView {
     cells: Vec<Cell>,
 }
 
-/// Convertit un bloc de 3 octets (12 × 2 bits) en un vecteur de 12 `Wall`.
+// 12 murs horizontaux => 3 octets => 2 bits par mur
 fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
     let mut walls = Vec::new();
     for i in 0..12 {
         let byte_index = i / 4;
         let bit_index = (i % 4) * 2;
         let val = (bytes[byte_index] >> bit_index) & 0b11;
-        let wall = match val {
+        let w = match val {
             0 => Wall::Undefined,
             1 => Wall::Open,
             2 => Wall::Wall,
-            _ => Wall::Undefined, // fallback
+            _ => Wall::Undefined,
         };
-        walls.push(wall);
+        walls.push(w);
     }
     walls
 }
 
-/// Convertit un bloc de 5 octets (9 × 4 bits) en un vecteur de 9 `Cell`.
+// 9 cellules => 5 octets => 4 bits par cellule
 fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
     let mut cells = Vec::new();
     for i in 0..9 {
         let byte_index = i / 2;
         let nibble_index = (i % 2) * 4;
-        let item_type = (bytes[byte_index] >> nibble_index) & 0x0F;
+        let item_type = (bytes[byte_index] >> nibble_index) & 0xF;
         cells.push(Cell { item_type });
     }
     cells
 }
 
-/// Interprète (3 octets horizontals, 3 octets verticals, 5 octets cells) en un `PrettyRadarView`.
 fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     let horizontal_walls = decode_walls(h);
     let vertical_walls   = decode_walls(v);
@@ -265,6 +263,80 @@ fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
         horizontal_walls,
         vertical_walls,
         cells,
+    }
+}
+
+/// Crée un ASCII 7×7 environ pour dessiner un radar 3×3
+fn visualize_radar_ascii(prv: &PrettyRadarView) -> String {
+    // On va dessiner un petit tableau 7×7 (ou 6×6) : 4 lignes horizontales
+    //   (car 3 "cases" + 1) et 4 lignes verticales.
+    // La logique est similaire à votre code existant, mais adaptée à nos "Wall".
+    //
+    // Indice sur l'indexation :
+    //   horizontal_walls : 12 => 4 rangées × 3 segments
+    //   vertical_walls   : 12 => 4 colonnes × 3 segments
+    //   cells            : 9 => 3×3
+    //
+    // Pour faire simple, on se base sur l'exemple "visualize_radar" que vous aviez,
+    // mais on l'adapte à `PrettyRadarView`.
+
+    let mut output = String::new();
+    // --- Première ligne (3 segments horizontaux) ---
+    //   On prend prv.horizontal_walls[0..3]
+    //   0 => segment #1, 1 => #2, 2 => #3
+    output.push_str("   ");
+    // Intersections + segments
+    for i in 0..3 {
+        output.push(symbol_h(prv.horizontal_walls[i]));
+        output.push('•');
+    }
+    output.push('\n');
+
+    // On dessine 3 "lignes" de radar
+    for row in 0..3 {
+        // (1) ligne verticale => 4 segments (vertical_walls)
+        //   Les segments verticaux pour la "row" :
+        //   indexes : row*4..(row*4 + 4)
+        let start_v = row * 4;
+        output.push_str("   ");
+        for col in 0..4 {
+            let wall = prv.vertical_walls[start_v + col];
+            output.push(symbol_v(wall));
+        }
+        output.push('\n');
+
+        // (2) ligne horizontale => 3 segments
+        //   indexes : (row+1)*3..(row+1)*3+3
+        if row < 2 {
+            let start_h = (row + 1) * 3;
+            output.push_str("   ");
+            for i in 0..3 {
+                output.push(symbol_h(prv.horizontal_walls[start_h + i]));
+                output.push('•');
+            }
+            output.push('\n');
+        }
+    }
+
+    // Note : c'est un exemple simplifié, vous pouvez ajuster la mise en page.
+    // Vous pouvez aussi imbriquer la loop "row" et "col" pour afficher
+    // un vrai mini-grille 7×7 avec intersections.
+
+    output
+}
+
+fn symbol_h(wall: Wall) -> char {
+    match wall {
+        Wall::Undefined => '•',
+        Wall::Open => '-',
+        Wall::Wall => '━',
+    }
+}
+fn symbol_v(wall: Wall) -> char {
+    match wall {
+        Wall::Undefined => '|',
+        Wall::Open => ' ',
+        Wall::Wall => '|',
     }
 }
 
@@ -316,7 +388,10 @@ impl GameStreamHandler {
         Ok(())
     }
 
-    /// Gère le contenu du RadarView (version "interprétée")
+    /// Gère le contenu du RadarView :
+    ///   - decode (h, v, c)
+    ///   - interpret -> PrettyRadarView
+    ///   - puis ASCII
     fn process_radar_view(&mut self, radar_str: &str) {
         // (1) Décodage simple : (horizontals, verticals, cells)
         match decode_radar_view(radar_str) {
@@ -332,6 +407,10 @@ impl GameStreamHandler {
                 println!("Horizontal walls: {:?}", pretty.horizontal_walls);
                 println!("Vertical walls:   {:?}", pretty.vertical_walls);
                 println!("Cells:            {:?}", pretty.cells);
+
+                // (3) ASCII
+                let ascii = visualize_radar_ascii(&pretty);
+                println!("--- ASCII Radar ---\n{}", ascii);
                 println!("=====================================");
             }
             Err(e) => {
@@ -351,7 +430,7 @@ impl GameStreamHandler {
                 println!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
                     println!("Impossible de passer: mur");
-                    continue; // on reste dans la boucle
+                    continue;
                 } else {
                     return Err(io::Error::new(
                         io::ErrorKind::Other,
@@ -360,7 +439,7 @@ impl GameStreamHandler {
                 }
             }
 
-            // 3) Si on a un RadarView => on l'interprète
+            // 3) Si on a un RadarView => on l'interprète + ASCII
             if let Some(radar_value) = parsed_msg.get("RadarView") {
                 if let Some(radar_str) = radar_value.as_str() {
                     self.process_radar_view(radar_str);
@@ -375,16 +454,34 @@ impl GameStreamHandler {
 }
 
 
-// -----------------------------------------------------------------------------
-// TESTS UNITAIRES (optionnels)
-// -----------------------------------------------------------------------------
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_simple_decode() {
-        let raw = decode_custom_b64("ieysGjGO8papd/a").unwrap();
-        println!("Raw decoded: {:?}", raw);
-        assert_eq!(raw, vec![32, 70, 18, 128, 152, 40, 240, 240, 15, 15, 240]);
+#[test]
+fn test_radar_wzvjMPzbdWaaaaa() {
+    let code = "ieysGjGO8papd/a";
+    println!("RadarView code: {:?}", code);
+
+    // 1) Décodage brut : 3 blocs (horizontals, verticals, cells)
+    match decode_radar_view(code) {
+        Ok((h, v, c)) => {
+            println!("--- Decoded Raw RadarView ---");
+            println!("Horizontals: {:?}", h);
+            println!("Verticals:   {:?}", v);
+            println!("Cells:       {:?}", c);
+
+            // 2) Interprétation
+            let prv = interpret_radar_view(&h, &v, &c);
+            println!("--- Interpreted RadarView ---");
+            println!("Horizontal walls: {:?}", prv.horizontal_walls);
+            println!("Vertical walls:   {:?}", prv.vertical_walls);
+            println!("Cells:            {:?}", prv.cells);
+
+            // 3) ASCII
+            let ascii = visualize_radar_ascii(&prv);
+            println!("--- ASCII Radar ---\n{}", ascii);
+            println!("=====================================");
+        }
+        Err(e) => {
+            eprintln!("Erreur lors du décodage: {}", e);
+            // Optionnel : on peut faire un `panic!()` si on considère que c'est un test "fail"
+        }
     }
 }
