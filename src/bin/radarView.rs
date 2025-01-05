@@ -1,5 +1,32 @@
 use std::env;
 
+#[derive(Debug, PartialEq)]
+enum Wall {
+    Undefined,
+    Open,
+    Wall,
+}
+
+#[derive(Debug, PartialEq)]
+enum Entity {
+    None,
+    Ally,
+    Enemy,
+    Monster,
+}
+
+#[derive(Debug, PartialEq)]
+struct Cell {
+    item_type: u8,
+}
+
+#[derive(Debug, PartialEq)]
+struct RadarView {
+    horizontal_walls: Vec<Wall>, // 12 Walls
+    vertical_walls: Vec<Wall>,   // 12 Walls
+    cells: Vec<Cell>,           // 9 Cells
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
@@ -11,20 +38,17 @@ fn main() {
     let input = &args[2];
 
     let result = match operation.as_str() {
-        "encode" => encode(input.as_bytes()),
-        "decode" => match decode(input) {
-            Ok(decoded) => {
-                match String::from_utf8(decoded) {
-                    Ok(s) => s,
-                    Err(_) => "Decoded data is not valid UTF-8".to_string(),
-                }
+        "decode" => {
+            match decode_radar_view(input) {
+                Ok(radar_view) => visualize_radar(&radar_view),
+                Err(err) => err,
             }
-            Err(err) => err,
         },
+        "encode"=> "Encoding not implemented yet for full visual output".to_string(),
         _ => "Invalid operation".to_string(),
     };
 
-    println!("Result: {}", result);
+    println!("{}", result);
 }
 
 fn encode(data: &[u8]) -> String {
@@ -95,10 +119,125 @@ fn decode(encoded: &str) -> Result<Vec<u8>, String> {
     Ok(decoded)
 }
 
+fn decode_radar_view(encoded: &str) -> Result<RadarView, String> {
+    let decoded_bytes = decode(encoded)?;
+
+    if decoded_bytes.len() != 11 {
+        return Err("Invalid decoded data length".to_string());
+    }
+
+    let horizontal_walls = decode_walls(&decoded_bytes[0..3]);
+    let vertical_walls = decode_walls(&decoded_bytes[3..6]);
+    let cells = decode_cells(&decoded_bytes[6..11]);
+
+    Ok(RadarView {
+        horizontal_walls,
+        vertical_walls,
+        cells,
+    })
+}
+
+fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
+    let mut walls = Vec::new();
+    for i in 0..12 {
+        let byte_index = i / 4;
+        let bit_index = (i % 4) * 2;
+        let wall_value = (bytes[byte_index] >> bit_index) & 0x03;
+        let wall = match wall_value {
+            0 => Wall::Undefined,
+            1 => Wall::Open,
+            2 => Wall::Wall,
+            _ => panic!("Invalid wall value"),
+        };
+        walls.push(wall);
+    }
+    walls
+}
+
+fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
+    let mut cells = Vec::new();
+    for i in 0..9 {
+        let byte_index = i / 2;
+        let nibble_index = (i % 2) * 4;
+        let item_type = (bytes[byte_index] >> nibble_index) & 0x0F;
+        cells.push(Cell { item_type });
+    }
+    cells
+}
+
+fn visualize_radar(radar_view: &RadarView) -> String {
+    let mut output = String::new();
+
+    // Top horizontal walls
+    output.push_str("##");
+    for i in 0..3 {
+        output.push(match radar_view.horizontal_walls[i] {
+            Wall::Undefined => '•',
+            Wall::Open => '-',
+            Wall::Wall => '━',
+        });
+        output.push('•');
+    }
+    output.push_str("##\n");
+
+    // Vertical walls and cells
+    for row in 0..3 {
+        output.push_str("##");
+        for col in 0..4 {
+            output.push(match radar_view.vertical_walls[row * 4 + col] {
+                Wall::Undefined => '|',
+                Wall::Open => ' ',
+                Wall::Wall => '|',
+            });
+        }
+        output.push_str("##\n");
+
+        output.push_str("•");
+        for col in 0..3 {
+            output.push(match radar_view.horizontal_walls[row * 3 + 3 + col] {
+                Wall::Undefined => '•',
+                Wall::Open => '-',
+                Wall::Wall => '━',
+            });
+            output.push('•');
+        }
+        output.push_str("\n");
+    }
+
+    output.push_str("##");
+    for i in 9..12 {
+        output.push(match radar_view.vertical_walls[i] {
+            Wall::Undefined => '|',
+            Wall::Open => ' ',
+            Wall::Wall => '|',
+        });
+    }
+    output.push_str("##\n");
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_decode_visualize() {
+        let encoded = "ieysGjGO8papd/a";
+        let radar_view = decode_radar_view(encoded).unwrap();
+        let visualization = visualize_radar(&radar_view);
+        println!("{}", visualization);
 
+        let expected_visualization = "##•-• •-•##\n\
+        ##|   |##\n\
+        •-• •-•\n\
+        ##|   |##\n\
+        • • •\n\
+        ##|   |##\n\
+        •-• •-•\n\
+        ##|   |##\n";
+
+        assert_eq!(visualization, expected_visualization);
+    }
     #[test]
     fn test_encode_decode() {
         assert_eq!(encode(&[0]), "aa");
