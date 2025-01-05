@@ -5,6 +5,13 @@ use rand::seq::IndexedRandom;
 use serde_json::{Value, json};
 pub const ADDRESS: &str = "localhost:8778";
 
+use base64::{
+    alphabet::Alphabet,
+    engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
+    engine::DecodePaddingMode,
+    DecodeError, Engine as _,
+};
+
 pub mod network {
     use std::io::Read;
     use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -133,6 +140,58 @@ enum Direction {
     LEFT
 }
 
+/// Alphabet imposé par le sujet du projet:
+///  0..25  -> a..z
+///  26..51 -> A..Z
+///  52..61 -> 0..9
+///  62     -> +
+///  63     -> /
+
+static CUSTOM_ALPHABET_STR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+
+fn decode_custom_b64(s: &str) -> Result<Vec<u8>, DecodeError> {
+    // 1) Construire l'alphabet custom
+    let alphabet = match Alphabet::new(CUSTOM_ALPHABET_STR) {
+        Ok(a) => a,
+        Err(_parse_err) => {
+            // Choisir un variant de DecodeError qui vous convient
+            return Err(DecodeError::InvalidByte(0, b'?'));
+        }
+    };
+
+    // 2) Configurer un mode "indulgent"
+    //    - Pas besoin de padding = '='
+    //    - Trailing bits autorisés si la longueur n'est pas multiple de 4
+    let config = GeneralPurposeConfig::new()
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+        .with_decode_allow_trailing_bits(true);
+
+    // 3) Créer le moteur qui utilise cet alphabet et cette config
+    let engine = GeneralPurpose::new(&alphabet, config);
+
+    // 4) Décoder la chaîne
+    engine.decode(s)
+}
+
+fn decode_radar_view(
+    radar_b64: &str
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
+    let bytes = decode_custom_b64(radar_b64)?;
+
+    // On suppose 11 octets (3+3+5)
+    if bytes.len() < 11 {
+        return Err(format!("RadarView: {} octets reçus, on s’attend à 11", bytes.len()).into());
+    }
+
+    // Extraire
+    let horizontals = bytes[0..3].to_vec();
+    let verticals   = bytes[3..6].to_vec();
+    let cells       = bytes[6..11].to_vec();
+
+    Ok((horizontals, verticals, cells))
+}
+
+
 pub struct GameStreamHandler {
     stream: TcpStream,
     directions: Vec<String>
@@ -147,8 +206,8 @@ impl GameStreamHandler {
                 "Right".to_string(),
                 "Back".to_string(),
                 "Left".to_string(),
-            ],}
-
+            ],
+        }
     }
 
     fn decide_next_action(&self, ) -> serde_json::Value {
@@ -178,42 +237,57 @@ impl GameStreamHandler {
 
         Ok(())
     }
-    fn handle_action_response(&mut self) -> io::Result<Option<String>> {
-        let response = network::receive_message(&mut self.stream)?;
-        println!("Server - action response: {}", response);
 
-        let parsed_response = json_utils::parse_json(&response)?;
-        if let Some(action_error) = parsed_response.get("ActionError") {
-            println!("ActionError - Action error from server: {:?}", action_error);
-
-            if action_error == "CannotPassThroughWall" {
-                return Ok(Some(action_error.to_string()));
+    fn process_radar_view(&mut self, radar_str: &str) {
+        match decode_radar_view(radar_str) {
+            Ok((horizontals, verticals, cells)) => {
+                println!("=== Decoded RadarView ===");
+                println!("Horizontals (3 octets): {:?}", horizontals);
+                println!("Verticals   (3 octets): {:?}", verticals);
+                println!("Cells       (5 octets): {:?}", cells);
+                println!("=========================");
             }
-
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Exiting due to action error: {:?}", action_error),
-            ));
+            Err(e) => {
+                eprintln!("Erreur lors du décodage du RadarView: {}", e);
+            }
         }
-
-        Ok(None)
     }
 
-
+    /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
         loop {
+            // (1) On lit un message depuis le serveur
+            let parsed_msg = self.receive_and_parse_message()?;
+
+            // (2) S’il contient un ActionError, on le gère
+            if let Some(action_error) = parsed_msg.get("ActionError") {
+                println!("ActionError - from server: {:?}", action_error);
+                if action_error == "CannotPassThroughWall" {
+                    // On pourrait changer de direction, ou autre
+                    // Juste un log
+                    println!("Impossible de passer: mur");
+                    // On continue la boucle, on n’envoie pas forcément d’autre action
+                    continue;
+                } else {
+                    // Pour tout autre ActionError, on quitte
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Exiting due to action error: {:?}", action_error),
+                    ));
+                }
+            }
+
+            // (3) S’il contient un RadarView, on le décode
+            if let Some(radar_value) = parsed_msg.get("RadarView") {
+                if let Some(radar_str) = radar_value.as_str() {
+                    self.process_radar_view(radar_str);
+                }
+            }
+
+            // (4) Ici, on décide de notre prochaine action
+            //     (Ex: on bouge "Front", "Back", etc.)
             let action = self.decide_next_action();
             self.send_action(&action)?;
-
-        //     let parsed_msg = self.receive_and_parse_message()?;
-        //
-        //     if let Some(radar_view) = parsed_msg.get("RadarView") {
-        //         println!("RadarView received: {:?}", radar_view);
-        //         let action = self.decide_next_action(radar_view);
-        //         self.send_action(&action)?;
-        //
-        //         self.handle_action_response()?;
-        //     }
         }
     }
 }
