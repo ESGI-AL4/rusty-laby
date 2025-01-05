@@ -6,8 +6,33 @@ use serde_json::{Value, json};
 
 pub const ADDRESS: &str = "localhost:8778";
 
+/// Bits 3..2 (nature): 00(None), 01(Index=H), 10(Goal=G), 11(Invalid)
+#[derive(Debug, Clone, Copy)]
+enum CellNature {
+    None,
+    Index,
+    Goal,
+    Invalid,
+}
+
+/// Bits 1..0 (entité): 00(None), 01(Ally=P), 10(Enemy=O), 11(Monster=M)
+#[derive(Debug, Clone, Copy)]
+enum CellEntity {
+    None,
+    Ally,
+    Enemy,
+    Monster,
+}
+
+/// Combine nature + entité sur 4 bits
+#[derive(Debug, Clone, Copy)]
+struct DecodedCell {
+    nature: CellNature,
+    entity: CellEntity,
+}
+
 // -----------------------------------------------------------------------------
-// Imports pour le custom base64
+// Imports base64 custom
 // -----------------------------------------------------------------------------
 use base64::{
     alphabet::Alphabet,
@@ -27,7 +52,6 @@ pub mod network {
     pub fn send_message(stream: &mut TcpStream, message: &str) -> io::Result<()> {
         let message_bytes = message.as_bytes();
         let size = message_bytes.len() as u32;
-
         stream.write_u32::<LittleEndian>(size)?;
         stream.write_all(message_bytes)?;
         Ok(())
@@ -35,10 +59,8 @@ pub mod network {
 
     pub fn receive_message(stream: &mut TcpStream) -> io::Result<String> {
         let size = stream.read_u32::<LittleEndian>()?;
-
         let mut buffer = vec![0; size as usize];
         stream.read_exact(&mut buffer)?;
-
         String::from_utf8(buffer).map_err(|e| {
             io::Error::new(io::ErrorKind::InvalidData, format!("Invalid data: {}", e))
         })
@@ -82,8 +104,8 @@ impl TeamRegistration {
     }
 
     pub fn register(&mut self) -> io::Result<String> {
-        let message = self.build_register_message();
-        network::send_message(&mut self.stream, &message)?;
+        let msg = self.build_register_message();
+        network::send_message(&mut self.stream, &msg)?;
         println!("Registration message sent!");
 
         self.wait_for_token()
@@ -119,9 +141,9 @@ impl TeamRegistration {
         registration_token: &str,
         mut stream: TcpStream,
     ) -> std::io::Result<String> {
-        let message = self.build_subscribe_message(player_name, registration_token);
-        println!("Server to send: {}", message);
-        network::send_message(&mut stream, &message)?;
+        let msg = self.build_subscribe_message(player_name, registration_token);
+        println!("Server to send: {}", msg);
+        network::send_message(&mut stream, &msg)?;
         println!("Subscribe message sent to server!");
         self.wait_for_subscription_result(&mut stream)
     }
@@ -139,13 +161,9 @@ impl TeamRegistration {
         loop {
             let msg = network::receive_message(stream)?;
             println!("Server - from subscription: {}", msg);
-
             let parsed_msg = json_utils::parse_json(&msg)?;
-            println!(
-                "Server - parsed subscription response: {}",
-                parsed_msg["SubscribePlayerResult"]
-            );
-
+            println!("Server - parsed subscription response: {}",
+                     parsed_msg["SubscribePlayerResult"]);
             return Ok(parsed_msg["SubscribePlayerResult"].to_string());
         }
     }
@@ -166,44 +184,42 @@ enum Direction {
 // -----------------------------------------------------------------------------
 static CUSTOM_ALPHABET_STR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
 
-/// Décode la chaîne `s` en bytes via l'alphabet custom.
+/// Décode la chaîne b64 custom
 fn decode_custom_b64(s: &str) -> Result<Vec<u8>, DecodeError> {
-    let alphabet = match Alphabet::new(CUSTOM_ALPHABET_STR) {
-        Ok(a) => a,
-        Err(_parse_err) => {
-            return Err(DecodeError::InvalidByte(0, b'?'));
-        }
-    };
-
+    let alphabet = Alphabet::new(CUSTOM_ALPHABET_STR)
+        .map_err(|_| DecodeError::InvalidByte(0, b'?'))?;
     let config = GeneralPurposeConfig::new()
         .with_decode_padding_mode(DecodePaddingMode::Indifferent)
         .with_decode_allow_trailing_bits(true);
 
     let engine = GeneralPurpose::new(&alphabet, config);
-
     engine.decode(s)
 }
 
-/// Décode un RadarView en renvoyant 3 blocs (h,v,c)
+/// Inversion horizontals & verticals
 fn decode_radar_view(
     radar_b64: &str
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
     let bytes = decode_custom_b64(radar_b64)?;
 
-    // On suppose 11 octets (3 + 3 + 5)
     if bytes.len() < 11 {
         return Err(format!("RadarView: {} octets reçus, on s’attend à 11", bytes.len()).into());
     }
 
-    let horizontals = bytes[0..3].to_vec();
-    let verticals   = bytes[3..6].to_vec();
-    let cells       = bytes[6..11].to_vec();
+    // 3 + 3 + 5
+    let mut horizontals = bytes[0..3].to_vec();
+    let mut verticals   = bytes[3..6].to_vec();
+    let cells           = &bytes[6..11];
 
-    Ok((horizontals, verticals, cells))
+    // Inversion => little-endian
+    horizontals.reverse();
+    verticals.reverse();
+
+    Ok((horizontals, verticals, cells.to_vec()))
 }
 
 // -----------------------------------------------------------------------------
-// Interprétation + ASCII
+// Walls
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone, Copy)]
 enum Wall {
@@ -212,25 +228,18 @@ enum Wall {
     Wall,
 }
 
-#[derive(Debug)]
-struct Cell {
-    item_type: u8,
-}
-
-#[derive(Debug)]
-struct PrettyRadarView {
-    horizontal_walls: Vec<Wall>,
-    vertical_walls: Vec<Wall>,
-    cells: Vec<Cell>,
-}
-
-// 12 murs horizontaux => 3 octets => 2 bits par mur
+// -----------------------------------------------------------------------------
+// decode_walls => 3 octets => 12 passages
 fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
-    let mut walls = Vec::new();
+    let mut walls = Vec::with_capacity(12);
+
+    let mut bits_24 = 0u32;
+    for &b in bytes {
+        bits_24 = (bits_24 << 8) | (b as u32);
+    }
     for i in 0..12 {
-        let byte_index = i / 4;
-        let bit_index = (i % 4) * 2;
-        let val = (bytes[byte_index] >> bit_index) & 0b11;
+        let shift = 24 - 2 * (i + 1);
+        let val = (bits_24 >> shift) & 0b11;
         let w = match val {
             0 => Wall::Undefined,
             1 => Wall::Open,
@@ -242,18 +251,67 @@ fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
     walls
 }
 
-// 9 cellules => 5 octets => 4 bits par cellule
-fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
-    let mut cells = Vec::new();
-    for i in 0..9 {
-        let byte_index = i / 2;
-        let nibble_index = (i % 2) * 4;
-        let item_type = (bytes[byte_index] >> nibble_index) & 0xF;
-        cells.push(Cell { item_type });
+// -----------------------------------------------------------------------------
+// decode_one_cell => nibble => DecodedCell
+// -----------------------------------------------------------------------------
+fn decode_one_cell(n: u8) -> DecodedCell {
+    if n == 0xF {
+        return DecodedCell {
+            nature: CellNature::Invalid,
+            entity: CellEntity::None,
+        };
     }
-    cells
+    let nature_bits = (n >> 2) & 0b11;
+    let entity_bits = n & 0b11;
+
+    let nature = match nature_bits {
+        0b00 => CellNature::None,
+        0b01 => CellNature::Index,
+        0b10 => CellNature::Goal,
+        _    => CellNature::Invalid,
+    };
+
+    let entity = match entity_bits {
+        0b00 => CellEntity::None,
+        0b01 => CellEntity::Ally,
+        0b10 => CellEntity::Enemy,
+        0b11 => CellEntity::Monster,
+        _    => CellEntity::None,
+    };
+
+    DecodedCell { nature, entity }
 }
 
+// -----------------------------------------------------------------------------
+// decode_cells => 5 octets => 9 nibbles => 9 DecodedCell
+// -----------------------------------------------------------------------------
+fn decode_cells(bytes: &[u8]) -> Vec<DecodedCell> {
+    let mut bits_40 = 0u64;
+    for &b in bytes {
+        bits_40 = (bits_40 << 8) | (b as u64);
+    }
+
+    let mut result = Vec::with_capacity(9);
+    for i in 0..9 {
+        let shift = 36 - 4 * (i + 1);
+        let nib = ((bits_40 >> shift) & 0xF) as u8;
+        let cell = decode_one_cell(nib);
+        result.push(cell);
+    }
+    result
+}
+
+// -----------------------------------------------------------------------------
+// PrettyRadarView => horizontals, verticals, cells
+// -----------------------------------------------------------------------------
+#[derive(Debug)]
+struct PrettyRadarView {
+    horizontal_walls: Vec<Wall>,
+    vertical_walls: Vec<Wall>,
+    cells: Vec<DecodedCell>,
+}
+
+// -----------------------------------------------------------------------------
 fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     let horizontal_walls = decode_walls(h);
     let vertical_walls   = decode_walls(v);
@@ -266,78 +324,89 @@ fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     }
 }
 
-/// Crée un ASCII 7×7 environ pour dessiner un radar 3×3
+// -----------------------------------------------------------------------------
+// ASCII
+// -----------------------------------------------------------------------------
 fn visualize_radar_ascii(prv: &PrettyRadarView) -> String {
-    // On va dessiner un petit tableau 7×7 (ou 6×6) : 4 lignes horizontales
-    //   (car 3 "cases" + 1) et 4 lignes verticales.
-    // La logique est similaire à votre code existant, mais adaptée à nos "Wall".
-    //
-    // Indice sur l'indexation :
-    //   horizontal_walls : 12 => 4 rangées × 3 segments
-    //   vertical_walls   : 12 => 4 colonnes × 3 segments
-    //   cells            : 9 => 3×3
-    //
-    // Pour faire simple, on se base sur l'exemple "visualize_radar" que vous aviez,
-    // mais on l'adapte à `PrettyRadarView`.
-
-    let mut output = String::new();
-    // --- Première ligne (3 segments horizontaux) ---
-    //   On prend prv.horizontal_walls[0..3]
-    //   0 => segment #1, 1 => #2, 2 => #3
-    output.push_str("   ");
-    // Intersections + segments
-    for i in 0..3 {
-        output.push(symbol_h(prv.horizontal_walls[i]));
-        output.push('•');
-    }
-    output.push('\n');
-
-    // On dessine 3 "lignes" de radar
-    for row in 0..3 {
-        // (1) ligne verticale => 4 segments (vertical_walls)
-        //   Les segments verticaux pour la "row" :
-        //   indexes : row*4..(row*4 + 4)
-        let start_v = row * 4;
-        output.push_str("   ");
-        for col in 0..4 {
-            let wall = prv.vertical_walls[start_v + col];
-            output.push(symbol_v(wall));
-        }
-        output.push('\n');
-
-        // (2) ligne horizontale => 3 segments
-        //   indexes : (row+1)*3..(row+1)*3+3
-        if row < 2 {
-            let start_h = (row + 1) * 3;
-            output.push_str("   ");
-            for i in 0..3 {
-                output.push(symbol_h(prv.horizontal_walls[start_h + i]));
-                output.push('•');
+    let mut out = String::new();
+    // 4 rangées horizontales
+    for row in 0..4 {
+        let base = row * 3;
+        let walls_slice = &prv.horizontal_walls[base..base+3];
+        for &w in walls_slice {
+            match w {
+                Wall::Undefined => out.push('#'),
+                Wall::Open => out.push(' '),
+                Wall::Wall => out.push('-'),
             }
-            output.push('\n');
+            match w {
+                Wall::Undefined => out.push('#'),
+                Wall::Open => out.push('•'),
+                Wall::Wall => out.push('•'),
+            }
+        }
+        out.push_str("\n");
+        if row < 3 {
+            let start_v = row * 4;
+            let v_slice = &prv.vertical_walls[start_v..start_v+4];
+            for &vw in v_slice {
+                match vw {
+                    Wall::Undefined => out.push('#'),
+                    Wall::Open => out.push(' '),
+                    Wall::Wall => out.push('|'),
+                }
+                match vw {
+                    Wall::Undefined => out.push('#'),
+                    _ => {}
+                }
+            }
+            out.push_str("\n");
         }
     }
-
-    // Note : c'est un exemple simplifié, vous pouvez ajuster la mise en page.
-    // Vous pouvez aussi imbriquer la loop "row" et "col" pour afficher
-    // un vrai mini-grille 7×7 avec intersections.
-
-    output
+    out
 }
 
-fn symbol_h(wall: Wall) -> char {
-    match wall {
-        Wall::Undefined => '•',
-        Wall::Open => '-',
-        Wall::Wall => '━',
+/// Fonction qui affiche les cellules ligne par ligne, style "Undefined, Rien, Undefined".
+fn visualize_cells_like_prof(cells: &[DecodedCell]) -> String {
+    let mut s = String::new();
+    s.push_str("Les cellules (par ligne):\n");
+    // 3×3 => 9
+    for row in 0..3 {
+        let start = row * 3;
+        let slice = &cells[start..start+3];
+        // Ex: "Undefined, Rien, Undefined"
+        let mut line_items = Vec::new();
+        for &decoded in slice {
+            let cell_str = format_decoded_cell(decoded);
+            line_items.push(cell_str);
+        }
+        s.push_str(&format!(
+            "Ligne {} => {}\n",
+            row+1,
+            line_items.join(", ")
+        ));
     }
+    s
 }
-fn symbol_v(wall: Wall) -> char {
-    match wall {
-        Wall::Undefined => '|',
-        Wall::Open => ' ',
-        Wall::Wall => '|',
-    }
+
+/// Convertit un `DecodedCell` en un string comme "Undefined, Rien" ou "Goal, Ally"
+fn format_decoded_cell(c: DecodedCell) -> String {
+    let nature_str = match c.nature {
+        CellNature::None => "Undefined",
+        CellNature::Index => "Index(H)",
+        CellNature::Goal => "Goal(G)",
+        CellNature::Invalid => "Invalid",
+    };
+    let entity_str = match c.entity {
+        CellEntity::None => "Rien",
+        CellEntity::Ally => "Ally(votre position)",
+        CellEntity::Enemy => "Enemy",
+        CellEntity::Monster => "Monster",
+    };
+
+    // Ex: "Undefined, Rien"
+    // ou "Goal(G), Ally(votre position)"
+    format!("{} + {}", nature_str, entity_str)
 }
 
 // -----------------------------------------------------------------------------
@@ -361,7 +430,6 @@ impl GameStreamHandler {
         }
     }
 
-    /// Décide la prochaine action (aléatoire)
     fn decide_next_action(&self) -> serde_json::Value {
         let mut rng = rand::rng();
         let default_direction = "Front".to_string();
@@ -371,7 +439,6 @@ impl GameStreamHandler {
         json!({ "MoveTo": random_direction })
     }
 
-    /// Lit un message du serveur (JSON)
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
         let msg = network::receive_message(&mut self.stream)?;
         println!("Server - received message: {}", msg);
@@ -380,7 +447,6 @@ impl GameStreamHandler {
         Ok(parsed_msg)
     }
 
-    /// Envoie une action au serveur
     fn send_action(&mut self, action: &serde_json::Value) -> io::Result<()> {
         let action_request = json!({ "Action": action }).to_string();
         println!("Client - Action to server: {}", action_request);
@@ -388,27 +454,24 @@ impl GameStreamHandler {
         Ok(())
     }
 
-    /// Gère le contenu du RadarView :
-    ///   - decode (h, v, c)
-    ///   - interpret -> PrettyRadarView
-    ///   - puis ASCII
     fn process_radar_view(&mut self, radar_str: &str) {
-        // (1) Décodage simple : (horizontals, verticals, cells)
         match decode_radar_view(radar_str) {
             Ok((h, v, c)) => {
                 println!("=== Decoded Raw RadarView ===");
-                println!("Horizontals (3 octets): {:?}", h);
-                println!("Verticals   (3 octets): {:?}", v);
-                println!("Cells       (5 octets): {:?}", c);
+                println!("Horizontals: {:?}", h);
+                println!("Verticals:   {:?}", v);
+                println!("Cells:       {:?}", c);
 
-                // (2) Interprétation
                 let pretty = interpret_radar_view(&h, &v, &c);
                 println!("--- Interpreted RadarView ---");
                 println!("Horizontal walls: {:?}", pretty.horizontal_walls);
                 println!("Vertical walls:   {:?}", pretty.vertical_walls);
-                println!("Cells:            {:?}", pretty.cells);
+                println!("Cells(decodées)  : {:?}", pretty.cells);
 
-                // (3) ASCII
+                // (Optionnel) Pour un style "Undefined, Rien, Undefined"
+                let cells_str = visualize_cells_like_prof(&pretty.cells);
+                println!("{}", cells_str);
+
                 let ascii = visualize_radar_ascii(&pretty);
                 println!("--- ASCII Radar ---\n{}", ascii);
                 println!("=====================================");
@@ -419,13 +482,9 @@ impl GameStreamHandler {
         }
     }
 
-    /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
         loop {
-            // 1) Lire un message depuis le serveur
             let parsed_msg = self.receive_and_parse_message()?;
-
-            // 2) Si on a un ActionError
             if let Some(action_error) = parsed_msg.get("ActionError") {
                 println!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
@@ -438,50 +497,44 @@ impl GameStreamHandler {
                     ));
                 }
             }
-
-            // 3) Si on a un RadarView => on l'interprète + ASCII
             if let Some(radar_value) = parsed_msg.get("RadarView") {
                 if let Some(radar_str) = radar_value.as_str() {
                     self.process_radar_view(radar_str);
                 }
             }
 
-            // 4) Décider et envoyer une action
             let action = self.decide_next_action();
             self.send_action(&action)?;
         }
     }
 }
 
-
+// -----------------------------------------------------------------------------
+// TEST
+// -----------------------------------------------------------------------------
 #[test]
-fn test_radar_wzvjMPzbdWaaaaa() {
-    let code = "ieysGjGO8papd/a";
+fn test_radar_ieys() {
+    let code = "wQeaMsua//8aaaa";
     println!("RadarView code: {:?}", code);
 
-    // 1) Décodage brut : 3 blocs (horizontals, verticals, cells)
     match decode_radar_view(code) {
         Ok((h, v, c)) => {
-            println!("--- Decoded Raw RadarView ---");
-            println!("Horizontals: {:?}", h);
-            println!("Verticals:   {:?}", v);
-            println!("Cells:       {:?}", c);
+            println!("Horizontals(LE) = {:?}", h);
+            println!("Verticals  (LE) = {:?}", v);
+            println!("Cells           = {:?}", c);
 
-            // 2) Interprétation
-            let prv = interpret_radar_view(&h, &v, &c);
-            println!("--- Interpreted RadarView ---");
-            println!("Horizontal walls: {:?}", prv.horizontal_walls);
-            println!("Vertical walls:   {:?}", prv.vertical_walls);
-            println!("Cells:            {:?}", prv.cells);
+            let rv = interpret_radar_view(&h, &v, &c);
+            println!("Horizontal walls: {:?}", rv.horizontal_walls);
+            println!("Vertical   walls: {:?}", rv.vertical_walls);
+            println!("Cells(decodées): {:?}", rv.cells);
 
-            // 3) ASCII
-            let ascii = visualize_radar_ascii(&prv);
-            println!("--- ASCII Radar ---\n{}", ascii);
-            println!("=====================================");
+            // Affiche "Undefined, Rien..." etc.
+            let cells_str = visualize_cells_like_prof(&rv.cells);
+            println!("{}", cells_str);
+
+            let ascii = visualize_radar_ascii(&rv);
+            println!("ASCII:\n{}", ascii);
         }
-        Err(e) => {
-            eprintln!("Erreur lors du décodage: {}", e);
-            // Optionnel : on peut faire un `panic!()` si on considère que c'est un test "fail"
-        }
+        Err(e) => println!("Erreur decode_radar_view: {}", e),
     }
 }
