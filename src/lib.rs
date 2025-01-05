@@ -291,3 +291,71 @@ impl GameStreamHandler {
         }
     }
 }
+
+fn encode_custom_b64(bytes: &[u8]) -> String {
+    let alphabet = Alphabet::new(CUSTOM_ALPHABET_STR)
+        .expect("Invalid custom alphabet?");
+
+    // On configure le moteur
+    let mut config = GeneralPurposeConfig::new();
+    // Désactiver le padding lors de l'encodage
+    config = config.with_encode_padding(false);
+
+    // On peut conserver les règles decode :
+    config = config
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+        .with_decode_allow_trailing_bits(true);
+
+    let engine = GeneralPurpose::new(&alphabet, config);
+    engine.encode(bytes)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_decode() {
+        // 1) Vérifier l’encodage de quelques octets
+        assert_eq!(encode_custom_b64(&[0]), "aa");
+        assert_eq!(encode_custom_b64(&[25]), "gq");
+        assert_eq!(encode_custom_b64(&[26]), "gG");
+        assert_eq!(encode_custom_b64(&[51]), "mW");
+        assert_eq!(encode_custom_b64(&[52]), "na");
+        assert_eq!(encode_custom_b64(&[61]), "pq");
+        assert_eq!(encode_custom_b64(&[62]), "pG");
+        assert_eq!(encode_custom_b64(&[63]), "pW");
+
+        // "Hello, World!" => "sgvSBg8SifDVCMXKiq"
+        assert_eq!(encode_custom_b64(b"Hello, World!"), "sgvSBg8SifDVCMXKiq");
+
+        // 2) Un tableau plus gros (0..=255)
+        let big_array: Vec<u8> = (0..=255).collect();
+        let encoded = encode_custom_b64(&big_array);
+        assert_eq!(
+            encoded,
+            "aaecaWqfbGCicqOlda0odXareHmufryxgbKAgXWDhH8GisiJjcuMjYGPkISSls4VmdeYmZq1nJC4otO7pd0+p0bbqKneruzhseLks0XntK9quvjtvfvwv1HzwLTCxv5FygfIy2rLzMDOAwPRBg1UB3bXCNn0Dxz3EhL6E3X9FN+aGykdHiwgH4IjIOUmJy6pKjgsK5svLPEyMzQBNj2EN6cHOQoKPAANQkMQQ6YTRQ+WSBkZTlw2T7I5URU8VB6/WmhcW8tfXSFiYCRlZm3oZ9dr0Tpu1DBx2nNA29ZD3T/G4ElJ5oxM5+JP6UVS7E7V8phY8/t19VF4+FR7/p3+/W"
+        );
+
+        // 3) Tests encode + decode “Hello Radar!”
+        let test_string = "Hello Radar!";
+        let encoded = encode_custom_b64(test_string.as_bytes());
+        let decoded = decode_custom_b64(&encoded).unwrap();
+        assert_eq!(decoded, test_string.as_bytes());
+
+        // 4) Test sur string vide
+        let test_string = "";
+        let encoded = encode_custom_b64(test_string.as_bytes());
+        let decoded = decode_custom_b64(&encoded).unwrap();
+        assert_eq!(decoded, test_string.as_bytes());
+
+        // 5) Test sur string plus longue
+        let test_string = "This is a longer test string to really see if everything is working fine.";
+        let encoded = encode_custom_b64(test_string.as_bytes());
+        let decoded = decode_custom_b64(&encoded).unwrap();
+        assert_eq!(decoded, test_string.as_bytes());
+
+        println!("All encode/decode tests passed successfully!");
+    }
+}
