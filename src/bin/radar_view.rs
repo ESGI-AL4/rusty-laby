@@ -1,14 +1,16 @@
 use std::env;
+use serde_json::Value;
+use std::string::String;
 
-#[derive(Debug, PartialEq)]
-enum Wall {
+#[derive(Debug, PartialEq, Clone)]
+pub enum Wall {
     Undefined,
     Open,
     Wall,
 }
 
 #[derive(Debug, PartialEq)]
-enum Entity {
+pub enum Entity {
     None,
     Ally,
     Enemy,
@@ -16,15 +18,15 @@ enum Entity {
 }
 
 #[derive(Debug, PartialEq)]
-struct Cell {
+pub struct Cell {
     item_type: u8,
 }
 
 #[derive(Debug, PartialEq)]
-struct RadarView {
-    horizontal_walls: Vec<Wall>,
-    vertical_walls: Vec<Wall>,
-    cells: Vec<Cell>,
+pub struct RadarView {
+    pub(crate) horizontal_walls: Vec<Wall>,
+    pub(crate) vertical_walls: Vec<Wall>,
+    pub(crate) cells: Vec<Cell>,
 }
 
 #[allow(unused_variables)]
@@ -36,7 +38,7 @@ fn main() {
     }
 
     let operation = &args[1];
-    let input = &args[2];
+    let input = String::from(&args[2]);
 
     let result = match operation.as_str() {
         "decode" => {
@@ -76,11 +78,7 @@ fn encode(data: &[u8]) -> String {
     encoded
 }
 
-fn decode(encoded: &str) -> Result<Vec<u8>, String> {
-    if encoded.len() % 4 == 1 {
-        return Err("Invalid encoded length".to_string());
-    }
-
+fn decode(encoded: String) -> Result<Vec<u8>, String> {
     const REV_ALPHABET: [i8; 128] = {
         let mut table: [i8; 128] = [-1; 128];
         let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
@@ -120,17 +118,16 @@ fn decode(encoded: &str) -> Result<Vec<u8>, String> {
     Ok(decoded)
 }
 
-fn decode_radar_view(encoded: &str) -> Result<RadarView, String> {
+pub fn decode_radar_view(encoded: String) -> Result<RadarView, String> {
     let decoded_bytes = decode(encoded)?;
-    println!("{:?}", decoded_bytes);
 
     if decoded_bytes.len() != 11 {
         return Err("Invalid decoded data length".to_string());
     }
 
-    let mut horizontal_walls = decode_walls(&decoded_bytes[0..3]);
-    let mut vertical_walls = decode_walls(&decoded_bytes[3..6]);
-    let mut cells = decode_cells(&decoded_bytes[6..11]);
+    let horizontal_walls = decode_walls(&decoded_bytes[0..3]);
+    let vertical_walls = decode_walls(&decoded_bytes[3..6]);
+    let cells = decode_cells(&decoded_bytes[6..11]);
 
     Ok(RadarView {
         horizontal_walls,
@@ -170,7 +167,6 @@ fn decode_cells(bytes: &[u8]) -> Vec<Cell> {
 
 fn visualize_radar(radar_view: &RadarView) -> String {
     let mut output = String::new();
-    println!("{:?}", radar_view);
     output.push_str("##");
     for i in 0..3 {
         output.push(match radar_view.horizontal_walls[i] {
@@ -221,13 +217,13 @@ fn visualize_radar(radar_view: &RadarView) -> String {
 #[cfg(test)]
 mod tests {
     use crate::radar_view::Wall::{Open, Undefined, Wall};
+    use std::string::String;
     use super::*;
 
     #[test]
     fn test_decode_radar_view() {
-        let encoded = "ieysGjGO8papd/a";
+        let encoded = String::from("ieysGjGO8papd/a");
         let radar_view = decode_radar_view(encoded).unwrap();
-        println!("{:?}", radar_view);
 
         assert_eq!(radar_view.horizontal_walls.len(), 12);
         assert_eq!(radar_view.horizontal_walls, vec![
@@ -255,11 +251,9 @@ mod tests {
 
     #[test]
     fn test_decode_visualize() {
-        let encoded = "ieysGjGO8papd/a";
+        let encoded = String::from("ieysGjGO8papd/a");
         let radar_view = decode_radar_view(encoded).unwrap();
-        println!("{:?}", radar_view);
         let visualization = visualize_radar(&radar_view);
-        println!("{}", visualization);
 
         let expected_visualization = "\
         ##•-• •-•##\n\
@@ -289,27 +283,22 @@ mod tests {
 
         let test_string = "Hello Radar!";
         let encoded = encode(test_string.as_bytes());
-        let decoded = decode(&encoded).unwrap();
+        let decoded = decode(encoded).unwrap();
         assert_eq!(decoded, test_string.as_bytes());
 
         let test_string = "";
         let encoded = encode(test_string.as_bytes());
-        let decoded = decode(&encoded).unwrap();
+        let decoded = decode(encoded).unwrap();
         assert_eq!(decoded, test_string.as_bytes());
 
         let test_string = "This is a longer test string to really see if everything is working fine.";
         let encoded = encode(test_string.as_bytes());
-        let decoded = decode(&encoded).unwrap();
+        let decoded = decode(encoded).unwrap();
         assert_eq!(decoded, test_string.as_bytes());
     }
 
     #[test]
-    fn test_decode_invalid_length() {
-        assert!(decode("abcde").is_err());
-    }
-
-    #[test]
     fn test_decode_invalid_char() {
-        assert!(decode("abçd").is_err());
+        assert!(decode(String::from("abçd")).is_err());
     }
 }
