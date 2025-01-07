@@ -1,12 +1,9 @@
 use rand::seq::IndexedRandom;
 use serde_json::{json, Value};
 use std::{fmt, io};
-use std::io::{BufRead, Write};
+use std::io::Write;
 use std::net::TcpStream;
-use std::ptr::null;
-use rand::rng;
-use crate::radar_view::{decode_radar_view, RadarView, Wall};
-use crate::radar_view::Wall::Undefined;
+use crate::radar_view::{decode_radar_view, Wall};
 
 #[path = "bin/radar_view.rs"]
 mod radar_view;

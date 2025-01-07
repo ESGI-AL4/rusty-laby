@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, BufReader};
+use std::io::{self};
 use std::net::TcpStream;
 use rusty_laby::{GameStreamHandler, TeamRegistration, ADDRESS};
 
