@@ -2,6 +2,7 @@ use std::io::{self, BufRead, BufReader};
 use std::net::TcpStream;
 use rusty_laby::{GameStreamHandler, TeamRegistration, ADDRESS};
 
+#[allow(unused_variables)]
 fn main() -> io::Result<()> {
     let stream = TcpStream::connect(ADDRESS)?;
     println!("Connected to server...");

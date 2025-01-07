@@ -1,8 +1,16 @@
 use rand::seq::IndexedRandom;
 use serde_json::{json, Value};
-use std::io;
+use std::{fmt, io};
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
+use std::ptr::null;
+use rand::rng;
+use crate::radar_view::{decode_radar_view, RadarView, Wall};
+use crate::radar_view::Wall::Undefined;
+
+#[path = "bin/radar_view.rs"]
+mod radar_view;
+
 pub const ADDRESS: &str = "localhost:8778";
 
 pub mod network {
@@ -126,11 +134,24 @@ impl TeamRegistration {
 
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum Direction {
     FRONT,
     BACK,
+    LEFT,
     RIGHT,
-    LEFT
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let direction_str = match self {
+            Direction::FRONT => "Front",
+            Direction::BACK => "Back",
+            Direction::RIGHT => "Right",
+            Direction::LEFT => "Left",
+        };
+        write!(f, "{}", direction_str)
+    }
 }
 
 pub struct GameStreamHandler {
@@ -151,18 +172,65 @@ impl GameStreamHandler {
 
     }
 
-    fn decide_next_action(&self, ) -> serde_json::Value {
-        // Parse the RadarView to understand the surroundings
-        // For now, we assume a simple logic: always move "Right"
-        // In the future, this will involve analyzing the radar_view content.
-        // serde_json::Value::String("MoveTo".to_string())
-        let mut rng = rand::rng();
-        let default_direction = "Front".to_string();
-        let random_direction = self.directions.choose(&mut rng).unwrap_or(&default_direction);
-        println!("Decide next action: {}", random_direction);
+    fn possible_action(&self, radar_view: String) -> Vec<Direction> {
+        let decoded_radar_view = decode_radar_view(radar_view.replace("\"", ""));
+        let mut actions = Vec::new();
 
-        json!({"MoveTo" : random_direction})
+        match decoded_radar_view {
+            Ok(radar_view) => {
+                let walls = [
+                    (Direction::FRONT, radar_view.horizontal_walls[4].clone()),
+                    (Direction::BACK, radar_view.horizontal_walls[7].clone()),
+                    (Direction::LEFT, radar_view.vertical_walls[5].clone()),
+                    (Direction::RIGHT, radar_view.vertical_walls[6].clone()),
+                ];
+
+                for (direction, wall) in &walls {
+                    if wall == &Wall::Open {
+                        actions.push(direction.clone()); // Use `.clone()` here
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Error decoding radar view: {}", e);
+                actions.push(Direction::FRONT);
+            }
+        }
+
+        actions
     }
+
+    fn decide_next_action(&self, radar_view: String) -> serde_json::Value {
+        let possible_actions = self.possible_action(radar_view.clone());
+        // let mut rng = rng();
+        //
+        // let default_direction = Direction::FRONT;
+        // let binding = &default_direction;
+        //
+        // let random_direction = possible_actions
+        //     .choose(&mut rng)
+        //     .unwrap_or(&binding);
+
+        println!("Actions: {:?}", possible_actions);
+        println!("RadarView: {:?}", radar_view);
+
+
+        let action = if possible_actions.contains(&Direction::LEFT) {
+            Direction::LEFT
+        } else if possible_actions.contains(&Direction::FRONT) {
+            Direction::FRONT
+        } else if possible_actions.contains(&Direction::RIGHT) {
+            Direction::RIGHT
+        } else {
+            Direction::BACK
+        };
+
+        println!("Possible actions are: {:?} for radar view : {}", possible_actions, radar_view);
+        println!("Decide next action: {:?} ", action);
+
+        json!({"MoveTo": action.to_string()})
+    }
+
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
         let msg = network::receive_message(&mut self.stream)?;
         println!("Server - received message: {}", msg);
@@ -202,18 +270,18 @@ impl GameStreamHandler {
 
     pub fn handle(&mut self) -> io::Result<()> {
         loop {
-            let action = self.decide_next_action();
+            let action = self.decide_next_action("null".to_string());
             self.send_action(&action)?;
 
-            // let parsed_msg = self.receive_and_parse_message()?;
-            //
-            // if let Some(radar_view) = parsed_msg.get("RadarView") {
-            //     println!("RadarView received: {:?}", radar_view);
-            //     let action = self.decide_next_action(radar_view);
-            //     self.send_action(&action)?;
-            //
-            //     self.handle_action_response()?;
-            // }
+            let parsed_msg = self.receive_and_parse_message()?;
+
+            if let Some(radar_view) = parsed_msg.get("RadarView") {
+                println!("RadarView received: {:?}", radar_view);
+                let action = self.decide_next_action(radar_view.to_string());
+                self.send_action(&action)?;
+
+                self.handle_action_response()?;
+            }
         }
     }
 }
