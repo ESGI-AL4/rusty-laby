@@ -27,6 +27,7 @@ struct RadarView {
     cells: Vec<Cell>,
 }
 
+#[allow(unused_variables)]
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
@@ -76,6 +77,10 @@ fn encode(data: &[u8]) -> String {
 }
 
 fn decode(encoded: &str) -> Result<Vec<u8>, String> {
+    if encoded.len() % 4 == 1 {
+        return Err("Invalid encoded length".to_string());
+    }
+
     const REV_ALPHABET: [i8; 128] = {
         let mut table: [i8; 128] = [-1; 128];
         let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
@@ -86,10 +91,6 @@ fn decode(encoded: &str) -> Result<Vec<u8>, String> {
         }
         table
     };
-
-    if encoded.len() % 4 == 1 {
-        return Err("Invalid encoded length".to_string());
-    }
 
     let mut decoded = Vec::new();
     let mut i = 0;
@@ -127,9 +128,9 @@ fn decode_radar_view(encoded: &str) -> Result<RadarView, String> {
         return Err("Invalid decoded data length".to_string());
     }
 
-    let horizontal_walls = decode_walls(&decoded_bytes[0..3]);
-    let vertical_walls = decode_walls(&decoded_bytes[3..6]);
-    let cells = decode_cells(&decoded_bytes[6..11]);
+    let mut horizontal_walls = decode_walls(&decoded_bytes[0..3]);
+    let mut vertical_walls = decode_walls(&decoded_bytes[3..6]);
+    let mut cells = decode_cells(&decoded_bytes[6..11]);
 
     Ok(RadarView {
         horizontal_walls,
@@ -152,6 +153,7 @@ fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
         };
         walls.push(wall);
     }
+    walls.reverse(); // little endian so we reverse
     walls
 }
 
@@ -218,7 +220,39 @@ fn visualize_radar(radar_view: &RadarView) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::radar_view::Wall::{Open, Undefined, Wall};
     use super::*;
+
+    #[test]
+    fn test_decode_radar_view() {
+        let encoded = "ieysGjGO8papd/a";
+        let radar_view = decode_radar_view(encoded).unwrap();
+        println!("{:?}", radar_view);
+
+        assert_eq!(radar_view.horizontal_walls.len(), 12);
+        assert_eq!(radar_view.horizontal_walls, vec![
+            Undefined, Open, Undefined,
+            Wall, Open, Undefined,
+            Open, Wall, Undefined,
+            Wall, Undefined, Undefined
+        ]);
+
+        assert_eq!(radar_view.vertical_walls.len(), 12);
+        assert_eq!(radar_view.vertical_walls, vec![
+            Undefined, Wall, Wall, Undefined,
+            Wall, Open, Wall, Undefined,
+            Wall, Undefined, Undefined, Undefined
+        ]);
+
+        assert_eq!(radar_view.cells.len(), 9);
+        assert_eq!(radar_view.cells, vec![
+            Cell { item_type: 0 }, Cell { item_type: 15 }, Cell { item_type: 0 },
+            Cell { item_type: 15 }, Cell { item_type: 15 }, Cell { item_type: 0 },
+            Cell { item_type: 15 }, Cell { item_type: 0 }, Cell { item_type: 0 }
+        ]);
+    }
+
+
     #[test]
     fn test_decode_visualize() {
         let encoded = "ieysGjGO8papd/a";
@@ -271,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_decode_invalid_length() {
-        assert!(decode("abc").is_err());
+        assert!(decode("abcde").is_err());
     }
 
     #[test]
