@@ -199,6 +199,11 @@ impl GameStreamHandler {
 
     fn decide_next_action(&self, radar_view: String) -> serde_json::Value {
         let possible_actions = self.possible_action(radar_view.clone());
+        //REPOND A TES SMS VANANDE
+        //REPOND A TES SMS VANANDE
+        //REPOND A TES SMS VANANDE
+        //REPOND A TES SMS VANANDE
+        //REPOND A TES SMS VANANDE
         // let mut rng = rng();
         //
         // let default_direction = Direction::FRONT;
