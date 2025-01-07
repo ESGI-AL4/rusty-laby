@@ -4,6 +4,11 @@ use std::net::TcpStream;
 use rand::seq::IndexedRandom;
 use serde_json::{Value, json};
 
+use bin::graph_radar; // Accès spécifique à `graph_radar`
+use graph_radar::{build_graph, Graph, Wall, DecodedCell, CellNature, CellEntity};
+
+
+
 pub const ADDRESS: &str = "localhost:8778";
 
 /// Bits 3..2 (nature): 00(None), 01(Hint=H), 10(Goal=G), 11(Invalid)
