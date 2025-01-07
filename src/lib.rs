@@ -1,14 +1,14 @@
-use std::io;
-use std::io::{Write, BufRead, BufReader};
-use std::net::TcpStream;
 use rand::seq::IndexedRandom;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+use std::io;
+use std::io::{BufRead, Write};
+use std::net::TcpStream;
 pub const ADDRESS: &str = "localhost:8778";
 
 pub mod network {
-    use std::io::Read;
-    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
     use super::*;
+    use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+    use std::io::Read;
 
     pub fn send_message(stream: &mut TcpStream, message: &str) -> io::Result<()> {
         let message_bytes = message.as_bytes();
@@ -205,15 +205,15 @@ impl GameStreamHandler {
             let action = self.decide_next_action();
             self.send_action(&action)?;
 
-        //     let parsed_msg = self.receive_and_parse_message()?;
-        //
-        //     if let Some(radar_view) = parsed_msg.get("RadarView") {
-        //         println!("RadarView received: {:?}", radar_view);
-        //         let action = self.decide_next_action(radar_view);
-        //         self.send_action(&action)?;
-        //
-        //         self.handle_action_response()?;
-        //     }
+            // let parsed_msg = self.receive_and_parse_message()?;
+            //
+            // if let Some(radar_view) = parsed_msg.get("RadarView") {
+            //     println!("RadarView received: {:?}", radar_view);
+            //     let action = self.decide_next_action(radar_view);
+            //     self.send_action(&action)?;
+            //
+            //     self.handle_action_response()?;
+            // }
         }
     }
 }
