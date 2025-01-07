@@ -255,7 +255,9 @@ fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
 // decode_one_cell => nibble => DecodedCell
 // -----------------------------------------------------------------------------
 fn decode_one_cell(n: u8) -> DecodedCell {
+    println!("Nibble: {:X}", n);
     if n == 0xF {
+        println!("Invalid nibble: 0xF");
         return DecodedCell {
             nature: CellNature::Invalid,
             entity: CellEntity::None,
@@ -263,6 +265,7 @@ fn decode_one_cell(n: u8) -> DecodedCell {
     }
     let nature_bits = (n >> 2) & 0b11;
     let entity_bits = n & 0b11;
+    println!("Nature: {:X}, Entity: {:X}", nature_bits, entity_bits);
 
     let nature = match nature_bits {
         0b00 => CellNature::None,
@@ -279,6 +282,8 @@ fn decode_one_cell(n: u8) -> DecodedCell {
         _    => CellEntity::None,
     };
 
+    println!("Nature: {:?}, Entity: {:?}", nature, entity);
+
     DecodedCell { nature, entity }
 }
 
@@ -286,15 +291,19 @@ fn decode_one_cell(n: u8) -> DecodedCell {
 // decode_cells => 5 octets => 9 nibbles => 9 DecodedCell
 // -----------------------------------------------------------------------------
 fn decode_cells(bytes: &[u8]) -> Vec<DecodedCell> {
+    println!("Bytes: {:?}", bytes);
     let mut bits_40 = 0u64;
     for &b in bytes {
         bits_40 = (bits_40 << 8) | (b as u64);
+
     }
+    println!("Bits: {:X}", bits_40);
 
     let mut result = Vec::with_capacity(9);
     for i in 0..9 {
-        let shift = 36 - 4 * (i + 1);
+        let shift = 36 - 4 * (i);
         let nib = ((bits_40 >> shift) & 0xF) as u8;
+        println!("Bits: {:X}, Nibble: {:X}", bits_40 >> shift, nib);
         let cell = decode_one_cell(nib);
         result.push(cell);
     }
@@ -374,10 +383,13 @@ fn visualize_cells_like_prof(cells: &[DecodedCell]) -> String {
     for row in 0..3 {
         let start = row * 3;
         let slice = &cells[start..start+3];
+        println!("Slice: {:?}", slice);
         // Ex: "Undefined, Rien, Undefined"
         let mut line_items = Vec::new();
         for &decoded in slice {
+            println!("Decoded: {:?}", decoded);
             let cell_str = format_decoded_cell(decoded);
+            println!("Cell str: {}", cell_str);
             line_items.push(cell_str);
         }
         s.push_str(&format!(
@@ -391,6 +403,7 @@ fn visualize_cells_like_prof(cells: &[DecodedCell]) -> String {
 
 /// Convertit un `DecodedCell` en un string comme "Undefined, Rien" ou "Goal, Ally"
 fn format_decoded_cell(c: DecodedCell) -> String {
+    println!("DecodedCell nice: {:?}", c);
     let nature_str = match c.nature {
         CellNature::None => "Undefined",
         CellNature::Index => "Index(H)",
@@ -406,6 +419,9 @@ fn format_decoded_cell(c: DecodedCell) -> String {
 
     // Ex: "Undefined, Rien"
     // ou "Goal(G), Ally(votre position)"
+    if (nature_str == "Invalid" && entity_str == "Rien") {
+        return format!("{}, {}", "Undefined", "Undefined");
+    }
     format!("{} + {}", nature_str, entity_str)
 }
 
@@ -514,19 +530,18 @@ impl GameStreamHandler {
 // -----------------------------------------------------------------------------
 #[test]
 fn test_radar_ieys() {
-    let code = "wQeaMsua//8aaaa";
+    let code = "ieysGjGO8papd/a";
     println!("RadarView code: {:?}", code);
 
     match decode_radar_view(code) {
         Ok((h, v, c)) => {
-            println!("Horizontals(LE) = {:?}", h);
-            println!("Verticals  (LE) = {:?}", v);
+            println!("Horizontals = {:?}", h);
+            println!("Verticals   = {:?}", v);
             println!("Cells           = {:?}", c);
 
             let rv = interpret_radar_view(&h, &v, &c);
             println!("Horizontal walls: {:?}", rv.horizontal_walls);
             println!("Vertical   walls: {:?}", rv.vertical_walls);
-            println!("Cells(decodées): {:?}", rv.cells);
 
             // Affiche "Undefined, Rien..." etc.
             let cells_str = visualize_cells_like_prof(&rv.cells);
