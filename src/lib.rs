@@ -11,6 +11,8 @@ use bin::radarview::{
     decode_radar_view, interpret_radar_view, PrettyRadarView, Wall, DecodedCell, CellNature, CellEntity,
 };
 
+use bin::challengehandler::ChallengeHandler;
+
 pub const ADDRESS: &str = "localhost:8778";
 
 
@@ -310,8 +312,13 @@ impl GameStreamHandler {
     }
 
     pub fn handle(&mut self) -> io::Result<()> {
+        let mut challenge_handler = ChallengeHandler::new();
+        let player_name = "Player1";
+
         loop {
             let parsed_msg = self.receive_and_parse_message()?;
+
+            // Gestion des erreurs d'action
             if let Some(action_error) = parsed_msg.get("ActionError") {
                 println!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
@@ -324,16 +331,24 @@ impl GameStreamHandler {
                     ));
                 }
             }
+
+            // Gestion des RadarView
             if let Some(radar_value) = parsed_msg.get("RadarView") {
                 if let Some(radar_str) = radar_value.as_str() {
                     self.process_radar_view(radar_str);
+                    let action = self.decide_next_action();
+                    self.send_action(&action)?;
+                    continue;
                 }
             }
 
-            let action = self.decide_next_action();
-            self.send_action(&action)?;
+            // Gestion des challenges ou des secrets
+            challenge_handler.process_message(&parsed_msg, player_name, &mut self.stream)?;
         }
     }
+
+
+
 }
 
 // -----------------------------------------------------------------------------
@@ -366,11 +381,20 @@ fn test_radar_ieys() {
             let graph = build_graph(&rv.horizontal_walls, &rv.vertical_walls, &rv.cells);
 
             // Log the graph structure
-            graph.log_graph();
+            // graph.log_graph();
 
             // Visualiser le graph en ASCII
-            let graph_ascii = graph.visualize_ascii();
-            println!("--- Graph Visualization ---\n{}", graph_ascii);
+            //let graph_ascii = graph.visualize_ascii();
+            //println!("--- Graph Visualization ---\n{}", graph_ascii);
+
+            // Reconstruire les données depuis le graphe
+            let rv_reconstructed = graph.reconstruct_radar_view();
+            println!("Reconstructed RadarView: ");
+            println!("Horizontal walls: {:?}", rv_reconstructed.horizontal_walls);
+            println!("Vertical   walls: {:?}", rv_reconstructed.vertical_walls);
+            println!("Cells: {:?}", rv_reconstructed.cells);
+            let cells_graph_str = visualize_cells_like_prof(&rv_reconstructed.cells);
+            println!("{}", cells_graph_str);
         }
         Err(e) => println!("Erreur decode_radar_view: {}", e),
     }

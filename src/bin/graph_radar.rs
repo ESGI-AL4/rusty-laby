@@ -1,6 +1,6 @@
+use std::cmp::PartialEq;
 use std::collections::HashMap;
-use crate::bin::radarview::{CellNature, DecodedCell, Wall};
-
+use crate::bin::radarview::{CellEntity, CellNature, DecodedCell, PrettyRadarView, Wall};
 
 #[derive(Debug)]
 struct Node {
@@ -13,6 +13,12 @@ struct Node {
 pub struct Graph {
     nodes: HashMap<usize, Node>,
     walls: HashMap<(usize, usize), Wall>, // Connexion entre deux cellules
+}
+
+impl PartialEq for &Wall {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
 }
 
 impl Graph {
@@ -47,95 +53,98 @@ impl Graph {
     pub(crate) fn visualize_ascii(&self) -> String {
         let mut ascii = String::new();
 
+        // Première ligne de murs horizontaux
         for col in 0..3 {
-
-            if col < 2 {
-                let id = col;
-                let next_id = id + 1;
+            if col > 0 {
+                let id = col - 1;
+                let next_id = col;
                 if let Some(wall) = self.walls.get(&(id, next_id)) {
-                    println!("{:?}", wall);
                     ascii.push_str(match wall {
                         Wall::Undefined => "##",
                         Wall::Open => " ",
-                        Wall::Wall => "-",
+                        Wall::Wall => "━",
                     });
                 }
             }
             ascii.push('•');
         }
-        ascii.push_str("\n");
+        ascii.push_str("##\n");
 
+        // Lignes centrales : cellules et murs
         for row in 0..3 {
-
-            // Affichage des cellules et murs verticaux
+            // Ligne des cellules et murs verticaux
+            ascii.push_str("##");
             for col in 0..3 {
                 let id = row * 3 + col;
                 let node = &self.nodes[&id];
 
                 // Cellule
-                ascii.push_str(&format!(
-                    "{}",
-                    match node.cell.nature {
-                        CellNature::None => " ",
-                        CellNature::Hint => "H",
-                        CellNature::Goal => "G",
-                        CellNature::Invalid => " ",
-                    }
-                ));
+                ascii.push_str(match node.cell.nature {
+                    CellNature::None => " ",
+                    CellNature::Hint => "H",
+                    CellNature::Goal => "G",
+                    CellNature::Invalid => "#",
+                });
 
-                // Mur vertical (|) ou espace
+                // Mur vertical
                 if col < 2 {
                     let next_id = id + 1;
                     if let Some(wall) = self.walls.get(&(id, next_id)) {
                         ascii.push_str(match wall {
-                            Wall::Undefined => "|",
+                            Wall::Undefined => "•",
                             Wall::Open => " ",
                             Wall::Wall => "|",
                         });
                     }
                 }
             }
+            ascii.push_str("##\n");
 
-
-            ascii.push_str("\n");
-
-            // Lignes des murs horizontaux sous les cellules, sauf la dernière ligne
+            // Ligne des murs horizontaux sous les cellules
             if row < 2 {
+                ascii.push_str("##");
                 for col in 0..3 {
                     let id = row * 3 + col;
-                    ascii.push('•'); // Jonction
+
+                    // Jonction
+                    ascii.push('•');
+
+                    // Mur horizontal
                     if let Some(next_id) = self.nodes[&id].neighbors.get("down") {
                         if let Some(wall) = self.walls.get(&(id, *next_id)) {
                             ascii.push_str(match wall {
-                                Wall::Undefined => "##",
-                                Wall::Open => " ",
-                                Wall::Wall => "-",
+                                Wall::Undefined => "•",
+                                Wall::Open => "-",
+                                Wall::Wall => "━",
                             });
                         }
                     }
                 }
-                ascii.push_str("\n");
+                ascii.push_str("##\n");
             }
         }
 
+        // Dernière ligne de murs horizontaux
+        ascii.push_str("##");
         for col in 0..3 {
-            ascii.push('•');
-            if col < 2 {
-                let id = 6 + col;
+            if col > 0 {
+                let id = (2 * 3) + col - 1; // Dernière ligne
                 let next_id = id + 1;
                 if let Some(wall) = self.walls.get(&(id, next_id)) {
                     ascii.push_str(match wall {
-                        Wall::Undefined => "##",
-                        Wall::Open => " ",
-                        Wall::Wall => "-",
+                        Wall::Undefined => "•",
+                        Wall::Open => "-",
+                        Wall::Wall => "━",
                     });
                 }
             }
+            ascii.push('•');
         }
-        ascii.push_str("\n");
+        ascii.push_str("##\n");
 
         ascii
     }
+
 
     pub fn log_graph(&self) {
         println!("=== Graph Nodes ===");
@@ -157,11 +166,58 @@ impl Graph {
         }
         println!("===================\n");
     }
+
+
+    /// Reconstruit un `RadarView` à partir du graphe.
+    pub fn reconstruct_radar_view(&self) -> PrettyRadarView {
+        let mut horizontal_walls = vec![Wall::Undefined; 12]; // 12 murs horizontaux
+        let mut vertical_walls = vec![Wall::Undefined; 12];   // 12 murs verticaux
+        let mut cells = vec![DecodedCell { nature: CellNature::None, entity: CellEntity::None }; 9]; // 9 cellules
+
+        // Reconstruire les cellules
+        for (id, node) in &self.nodes {
+            cells[*id] = node.cell;
+        }
+
+        // Reconstruire les murs horizontaux
+        for row in 0..4 {
+            for col in 0..3 {
+                let id = row * 3 + col;
+                let next_id = id + 1;
+                if let Some(wall) = self.walls.get(&(id, next_id)) {
+                    let wall_index = row * 3 + col;
+                    horizontal_walls[wall_index] = *wall;
+                }
+            }
+        }
+
+        // Reconstruire les murs verticaux
+        for row in 0..4 {
+            for col in 0..3 {
+                let id = row * 3 + col;
+                let next_id = id + 3;
+                if let Some(wall) = self.walls.get(&(id, next_id)) {
+                    let wall_index = row * 3 + col;
+                    vertical_walls[wall_index] = *wall;
+                }
+            }
+        }
+
+        PrettyRadarView {
+            horizontal_walls,
+            vertical_walls,
+            cells,
+        }
+    }
 }
 
 
 pub fn build_graph(horizontals: &[Wall], verticals: &[Wall], cells: &[DecodedCell]) -> Graph {
     let mut graph = Graph::new();
+    println!("=== Building Graph ===");
+    println!("Horizontals: {:?}", horizontals);
+    println!("Verticals: {:?}", verticals);
+    println!("Cells: {:?}", cells);
 
     // Ajouter les cellules comme nœuds
     for (i, cell) in cells.iter().enumerate() {
@@ -169,8 +225,8 @@ pub fn build_graph(horizontals: &[Wall], verticals: &[Wall], cells: &[DecodedCel
     }
 
     // Ajouter les murs horizontaux
-    for row in 0..3 {
-        for col in 0..2 {
+    for row in 0..4 {
+        for col in 0..3{
             let id = row * 3 + col;
             let next_id = id + 1;
             let wall_index = row * 3 + col;
@@ -179,8 +235,8 @@ pub fn build_graph(horizontals: &[Wall], verticals: &[Wall], cells: &[DecodedCel
     }
 
     // Ajouter les murs verticaux
-    for row in 0..2 {
-        for col in 0..3 {
+    for row in 0..4{
+        for col in 0..3{
             let id = row * 3 + col;
             let next_id = id + 3;
             let wall_index = row * 3 + col;
