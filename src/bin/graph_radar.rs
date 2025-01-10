@@ -17,7 +17,12 @@ pub struct Graph {
 
 impl PartialEq for &Wall {
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        match (self, other) {
+            (Wall::Undefined, Wall::Undefined) => true,
+            (Wall::Open, Wall::Open) => true,
+            (Wall::Wall, Wall::Wall) => true,
+            _ => false,
+        }
     }
 }
 

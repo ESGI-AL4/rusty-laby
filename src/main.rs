@@ -1,6 +1,15 @@
 use std::io::{self, BufRead, BufReader};
 use std::net::TcpStream;
-use rusty_laby::{GameStreamHandler, TeamRegistration, ADDRESS};
+use rusty_laby::{GameStreamHandler, ADDRESS};
+mod bin {
+    pub mod team_registration;
+    pub mod network;
+    pub mod json_utils;
+
+}
+
+use bin::team_registration::TeamRegistration;
+
 
 fn main() -> io::Result<()> {
     let stream = TcpStream::connect(ADDRESS)?;

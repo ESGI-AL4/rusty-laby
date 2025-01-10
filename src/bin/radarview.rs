@@ -1,10 +1,3 @@
-use base64::{
-    alphabet::Alphabet,
-    engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
-    engine::DecodePaddingMode,
-    DecodeError, Engine as _,
-};
-
 #[derive(Debug, Clone, Copy)]
 pub enum CellNature {
     None,
@@ -41,20 +34,72 @@ pub struct PrettyRadarView {
     pub cells: Vec<DecodedCell>,
 }
 
-static CUSTOM_ALPHABET_STR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+fn encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+    let mut encoded = String::new();
+    let mut i = 0;
+    while i < data.len() {
+        let mut group = [0u8; 3];
+        let remaining = data.len() - i;
+        let copy_length = std::cmp::min(remaining, group.len());
+        group[..copy_length].copy_from_slice(&data[i..i + copy_length]);
 
-pub fn decode_custom_b64(s: &str) -> Result<Vec<u8>, DecodeError> {
-    let alphabet = Alphabet::new(CUSTOM_ALPHABET_STR)
-        .map_err(|_| DecodeError::InvalidByte(0, b'?'))?;
-    let config = GeneralPurposeConfig::new()
-        .with_decode_padding_mode(DecodePaddingMode::Indifferent)
-        .with_decode_allow_trailing_bits(true);
-    let engine = GeneralPurpose::new(&alphabet, config);
-    engine.decode(s)
+        encoded.push(ALPHABET[(group[0] >> 2) as usize] as char);
+        encoded.push(ALPHABET[((group[0] & 0x03) << 4 | group[1] >> 4) as usize] as char);
+        if remaining > 1 {
+            encoded.push(ALPHABET[((group[1] & 0x0F) << 2 | group[2] >> 6) as usize] as char);
+        }
+        if remaining > 2 {
+            encoded.push(ALPHABET[(group[2] & 0x3F) as usize] as char);
+        }
+
+        i += 3;
+    }
+    encoded
+}
+
+fn decode(encoded: String) -> Result<Vec<u8>, String> {
+    const REV_ALPHABET: [i8; 128] = {
+        let mut table: [i8; 128] = [-1; 128];
+        let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+        let mut i = 0;
+        while i < alphabet.len() {
+            table[alphabet[i] as usize] = i as i8;
+            i += 1;
+        }
+        table
+    };
+
+    let mut decoded = Vec::new();
+    let mut i = 0;
+    while i < encoded.len() {
+        let mut group = [0u8; 4];
+        for j in 0..4 {
+            if i + j < encoded.len(){
+                let char_val = encoded.as_bytes()[i + j] as usize;
+                if char_val >= REV_ALPHABET.len() || REV_ALPHABET[char_val] == -1 {
+                    return Err("Invalid character in encoded string".to_string());
+                }
+                group[j] = REV_ALPHABET[char_val] as u8;
+            }
+        }
+
+        decoded.push(group[0] << 2 | group[1] >> 4);
+        if i + 2 < encoded.len() {
+            decoded.push(group[1] << 4 | group[2] >> 2);
+        }
+        if i + 3 < encoded.len() {
+            decoded.push(group[2] << 6 | group[3]);
+        }
+
+        i += 4;
+    }
+
+    Ok(decoded)
 }
 
 pub fn decode_radar_view(radar_b64: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
-    let bytes = decode_custom_b64(radar_b64)?;
+    let bytes = decode(radar_b64.to_string()).map_err(|e| format!("Decode error: {}", e))?;
     if bytes.len() < 11 {
         return Err(format!("RadarView: {} octets reçus, on s’attend à 11", bytes.len()).into());
     }
