@@ -3,15 +3,15 @@ use std::collections::HashMap;
 use crate::bin::radarview::{CellEntity, CellNature, DecodedCell, PrettyRadarView, Wall};
 
 #[derive(Debug)]
-struct Node {
-    id: usize,
-    cell: DecodedCell,
-    neighbors: HashMap<String, usize>, // "left", "right", "up", "down"
+pub struct Node {
+    pub(crate) id: usize,
+    pub(crate) cell: DecodedCell,
+    pub(crate) neighbors: HashMap<String, usize>, // "left", "right", "up", "down"
 }
 
 #[derive(Debug)]
 pub struct Graph {
-    nodes: HashMap<usize, Node>,
+    pub(crate) nodes: HashMap<usize, Node>,
     walls: HashMap<(usize, usize), Wall>, // Connexion entre deux cellules
 }
 
@@ -27,14 +27,14 @@ impl PartialEq for &Wall {
 }
 
 impl Graph {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Graph {
             nodes: HashMap::new(),
             walls: HashMap::new(),
         }
     }
 
-    fn add_node(&mut self, id: usize, cell: DecodedCell) {
+    pub(crate) fn add_node(&mut self, id: usize, cell: DecodedCell) {
         self.nodes.insert(
             id,
             Node {

@@ -32,6 +32,7 @@ pub struct PrettyRadarView {
     pub horizontal_walls: Vec<Wall>,
     pub vertical_walls: Vec<Wall>,
     pub cells: Vec<DecodedCell>,
+    pub current_cell: usize,
 }
 
 fn encode(data: &[u8]) -> String {
@@ -176,6 +177,36 @@ pub fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     PrettyRadarView {
         horizontal_walls: decode_walls(h),
         vertical_walls: decode_walls(v),
-        cells: decode_cells(c),
+        cells: decode_cells(c)
     }
 }
+
+impl PrettyRadarView {
+    /// Retourne les voisins visibles (index des cellules voisines et le type de mur)
+    pub fn visible_neighbors(&self) -> Vec<(usize, Wall)> {
+        let mut neighbors = Vec::new();
+        let current_row = self.current_cell / 3;
+        let current_col = self.current_cell % 3;
+
+        // Vérifier les voisins haut, bas, gauche et droite
+        if current_row > 0 {
+            let neighbor_index = self.current_cell - 3;
+            neighbors.push((neighbor_index, self.horizontal_walls[self.current_cell - 3]));
+        }
+        if current_row < 2 {
+            let neighbor_index = self.current_cell + 3;
+            neighbors.push((neighbor_index, self.horizontal_walls[self.current_cell]));
+        }
+        if current_col > 0 {
+            let neighbor_index = self.current_cell - 1;
+            neighbors.push((neighbor_index, self.vertical_walls[self.current_cell - 1]));
+        }
+        if current_col < 2 {
+            let neighbor_index = self.current_cell + 1;
+            neighbors.push((neighbor_index, self.vertical_walls[self.current_cell]));
+        }
+
+        neighbors
+    }
+}
+
