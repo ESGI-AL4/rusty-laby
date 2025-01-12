@@ -3,12 +3,17 @@ use serde_json::{json, Value};
 use std::{fmt, io};
 use std::io::Write;
 use std::net::TcpStream;
+use std::ops::Deref;
+use std::sync::OnceLock;
+use lazy_static::lazy_static;
+use rand::TryRngCore;
 use crate::radar_view::{decode_radar_view, Wall};
 
 #[path = "bin/radar_view.rs"]
 mod radar_view;
 
 pub const ADDRESS: &str = "localhost:8778";
+
 
 pub mod network {
     use super::*;
@@ -139,6 +144,12 @@ enum Direction {
     RIGHT,
 }
 
+//si je vais vers :
+// nord -> gauche à l'est
+// sud -> gauche à l'ouest
+// est -> gauche à l'ouest
+// ouest -> gauche à
+
 impl fmt::Display for Direction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let direction_str = match self {
@@ -192,6 +203,7 @@ impl GameStreamHandler {
                 println!("Error decoding radar view: {}", e);
                 actions.push(Direction::FRONT);
             }
+
         }
 
         actions
@@ -217,18 +229,23 @@ impl GameStreamHandler {
         println!("RadarView: {:?}", radar_view);
 
 
-        let action = if possible_actions.contains(&Direction::LEFT) {
-            Direction::LEFT
-        } else if possible_actions.contains(&Direction::FRONT) {
+        let action = if possible_actions.contains(&Direction::FRONT) {
             Direction::FRONT
-        } else if possible_actions.contains(&Direction::RIGHT) {
-            Direction::RIGHT
-        } else {
+        } else if possible_actions.contains(&Direction::LEFT) {
+            Direction::LEFT
+        } else if possible_actions.contains(&Direction::BACK) {
             Direction::BACK
+        } else {
+            Direction::RIGHT
         };
+
+
 
         println!("Possible actions are: {:?} for radar view : {}", possible_actions, radar_view);
         println!("Decide next action: {:?} ", action);
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).expect("Échec de la lecture");
 
         json!({"MoveTo": action.to_string()})
     }
