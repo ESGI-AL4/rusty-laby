@@ -11,10 +11,10 @@ use bin::radarview::{
     decode_radar_view, interpret_radar_view,
 };
 
+use bin::challengehandler::ChallengeHandler;
+use crate::bin::{json_utils, network};
 use crate::bin::ascii_utils::{visualize_cells_like_prof, visualize_radar_ascii};
 use crate::bin::map::{Explorer, Map};
-use crate::bin::{json_utils, network};
-use bin::challengehandler::ChallengeHandler;
 
 pub const ADDRESS: &str = "localhost:8778";
 
@@ -113,6 +113,7 @@ impl GameStreamHandler {
         }
     }
 
+    /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
         let mut challenge_handler = ChallengeHandler::new();
         let mut challenge_count = 0;
@@ -165,9 +166,6 @@ impl GameStreamHandler {
             challenge_handler.process_message(&parsed_msg, &mut self.stream, &mut challenge_count)?;
         }
     }
-
-
-
 }
 
 // -----------------------------------------------------------------------------
