@@ -153,6 +153,9 @@ impl GameStreamHandler {
                     // 4) Mettre à jour la position du joueur
                     self.map.move_player(&next_move);
 
+                    println!("{}", self.map.visualize_map());
+                    self.map.graph.log_graph(); // debug complet
+
                     continue;
                 }
             }
