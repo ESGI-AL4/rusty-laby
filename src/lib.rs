@@ -1,23 +1,24 @@
-use rand::seq::IndexedRandom;
-use serde_json::{json, Value};
+use rand::seq::SliceRandom;
+use serde_json::json;
 use std::io;
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
-
 
 mod bin;
 use bin::graph_radar::build_graph;
 
 use bin::radarview::{
-    decode_radar_view, interpret_radar_view, CellEntity, CellNature, DecodedCell, PrettyRadarView, Wall,
+    decode_radar_view, interpret_radar_view
+    ,
 };
 
-use bin::challengehandler::ChallengeHandler;
-use crate::bin::{json_utils, network};
 use crate::bin::ascii_utils::{visualize_cells_like_prof, visualize_radar_ascii};
+use crate::bin::{json_utils, network};
+use bin::challengehandler::ChallengeHandler;
+
+use crate::bin::map::{Explorer, Map};
 
 pub const ADDRESS: &str = "localhost:8778";
-
 
 // -----------------------------------------------------------------------------
 // GameStreamHandler
@@ -25,10 +26,19 @@ pub const ADDRESS: &str = "localhost:8778";
 pub struct GameStreamHandler {
     stream: TcpStream,
     directions: Vec<String>,
+
+    /// Notre carte interne (graphe) pour stocker tout ce qu'on découvre
+    pub map: Map,
+
+    /// Explorateur gérant la stratégie BFS
+    pub explorer: Explorer,
 }
 
 impl GameStreamHandler {
     pub fn new(stream: TcpStream) -> Self {
+        // On initialise la Map et l'Explorer
+        let map = Map::new();
+        let explorer = Explorer::new();
         Self {
             stream,
             directions: vec![
@@ -37,17 +47,19 @@ impl GameStreamHandler {
                 "Back".to_string(),
                 "Left".to_string(),
             ],
+            map,
+            explorer,
         }
     }
 
-    fn decide_next_action(&self) -> serde_json::Value {
+    /*fn decide_next_action(&self) -> serde_json::Value {
         let mut rng = rand::rng();
         let default_direction = "Front".to_string();
         let random_direction = self.directions.choose(&mut rng).unwrap_or(&default_direction);
         println!("Decide next action: {}", random_direction);
 
         json!({ "MoveTo": random_direction })
-    }
+    }*/
 
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
         let msg = network::receive_message(&mut self.stream)?;
@@ -85,6 +97,16 @@ impl GameStreamHandler {
                 let ascii = visualize_radar_ascii(&pretty);
                 println!("--- ASCII Radar ---\n{}", ascii);
                 println!("=====================================");
+
+                // 1) Mettre à jour la carte interne (Map)
+                self.map.update_with_radarview(&pretty);
+
+                // 2) Dire à l'explorer s'il y a un angle => BFS orienté
+                //    Indiquer s'il y a un "Hint(RelativeCompass)" dans ce RadarView
+                if let Some(angle) = self.explorer.check_for_compass_hint(&pretty) {
+                    println!("Hint: On a détecté un angle = {}", angle);
+                    self.explorer.set_angle(angle);
+                }
             }
             Err(e) => {
                 eprintln!("Erreur lors du décodage du RadarView: {}", e);
@@ -92,6 +114,7 @@ impl GameStreamHandler {
         }
     }
 
+    /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
         let mut challenge_handler = ChallengeHandler::new();
         let mut challenge_count = 0;
@@ -116,9 +139,20 @@ impl GameStreamHandler {
             // Gestion des RadarView
             if let Some(radar_value) = parsed_msg.get("RadarView") {
                 if let Some(radar_str) = radar_value.as_str() {
+                    // 1) Process RadarView => update map
                     self.process_radar_view(radar_str);
-                    let action = self.decide_next_action();
+
+                    // 2) Décider la prochaine action (BFS d'exploration)
+                    let next_move = self.explorer.decide_next_move(&mut self.map);
+                    println!("Decide next action: {}", next_move);
+
+                    // 3) Envoyer l'action
+                    let action = json!({ "MoveTo": next_move });
                     self.send_action(&action)?;
+
+                    // 4) Mettre à jour la position du joueur
+                    self.map.move_player(&next_move);
+
                     continue;
                 }
             }
@@ -127,9 +161,6 @@ impl GameStreamHandler {
             challenge_handler.process_message(&parsed_msg, &mut self.stream, &mut challenge_count)?;
         }
     }
-
-
-
 }
 
 // -----------------------------------------------------------------------------
