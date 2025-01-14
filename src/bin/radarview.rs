@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellNature {
     None,
     Hint,
@@ -20,7 +20,7 @@ pub struct DecodedCell {
     pub entity: CellEntity,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wall {
     Undefined,
     Open,
@@ -177,7 +177,8 @@ pub fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     PrettyRadarView {
         horizontal_walls: decode_walls(h),
         vertical_walls: decode_walls(v),
-        cells: decode_cells(c)
+        cells: decode_cells(c),
+        current_cell: 0,
     }
 }
 
