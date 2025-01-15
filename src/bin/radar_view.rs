@@ -1,5 +1,4 @@
 use std::env;
-use serde_json::Value;
 use std::string::String;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -216,6 +215,7 @@ fn visualize_radar(radar_view: &RadarView) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[path = "bin/radar_view.rs"]
     use crate::radar_view::Wall::{Open, Undefined, Wall};
     use std::string::String;
     use super::*;
