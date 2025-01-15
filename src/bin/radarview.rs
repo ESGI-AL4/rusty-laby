@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellNature {
     None,
     Hint,
@@ -20,7 +20,7 @@ pub struct DecodedCell {
     pub entity: CellEntity,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wall {
     Undefined,
     Open,

@@ -1,4 +1,4 @@
-use std::io::{self};
+use std::io::{self, BufRead};
 use std::net::TcpStream;
 use rusty_laby::{GameStreamHandler, ADDRESS};
 mod bin {
