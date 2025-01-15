@@ -1,6 +1,15 @@
 use std::io::{self};
 use std::net::TcpStream;
-use rusty_laby::{GameStreamHandler, TeamRegistration, ADDRESS};
+use rusty_laby::{GameStreamHandler, ADDRESS};
+mod bin {
+    pub mod team_registration;
+    pub mod network;
+    pub mod json_utils;
+
+}
+
+use bin::team_registration::TeamRegistration;
+
 
 #[allow(unused_variables)]
 fn main() -> io::Result<()> {
