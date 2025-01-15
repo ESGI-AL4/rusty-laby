@@ -153,10 +153,17 @@ impl GameStreamHandler {
                     self.map.move_player(&next_move);
 
                     // Affiche la map (graphe + path)
+
                     println!("{}", self.map.visualize_map());
 
                     self.map.graph.log_graph();
 
+
+                    // 3) Attendre que l'utilisateur appuie sur Entrée
+                    print!("Appuyez sur Entrée pour avancer...");
+                    io::stdout().flush()?; // Assure que le message est affiché avant d'attendre
+                    let mut buffer = String::new();
+                    io::stdin().read_line(&mut buffer)?;
 
                     continue;
                 }
