@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use crate::bin::radarview::{decode_radar_view, interpret_radar_view};
 use crate::bin::radarview::CellNature::Invalid;
-// ^ Assurez-vous que le chemin vers `radarview` est correct
 
 /// Représente l'orientation possible d'un joueur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -155,6 +154,49 @@ impl MazeMap {
         Self {
             grid: HashMap::new(),
         }
+    }
+    fn radarview_offset_to_map(
+        x: i32,
+        y: i32,
+        index: usize,
+        current_direction: Direction,
+    ) -> (i32, i32) {
+        // Offsets si le joueur fait face au Nord
+        // (index 0 = (x-1, y-1), index 1 = (x, y-1), etc.)
+        let offsets_north = [
+            (-1,  1), (0,  1), (1,  1),
+            (-1,  0), (0,  0), (1,  0),
+            (-1, -1), (0, -1), (1, -1),
+        ];
+
+        // Pour East, on tourne "l'ensemble" 90°
+        // (front = x+1 => index 1 => (1,0), etc.)
+        let offsets_east = [
+            (-1, -1), (-1, 0), (-1, 1),
+            (0, -1), (0, 0), (0, 1),
+            (1, -1), (1, 0), (1, 1),
+        ];
+
+        let offsets_south = [
+            (1, -1), (0, -1), (-1, -1),
+            (1, 0), (0, 0), (-1, 0),
+            (1, 1), (0, 1), (-1, 1),
+        ];
+
+        let offsets_west = [
+            (1, 1),  (1, 0),  (1, -1),
+            (0, 1),  (0, 0),  (0, -1),
+            (-1, 1), (-1, 0), (-1, -1),
+        ];
+
+        let (dx, dy) = match current_direction {
+            Direction::North => offsets_north[index],
+            Direction::East  => offsets_east[index],
+            Direction::South => offsets_south[index],
+            Direction::West  => offsets_west[index],
+        };
+
+        (x + dx, y + dy)
     }
 
     /// Récupère une cellule en lecture seule.
