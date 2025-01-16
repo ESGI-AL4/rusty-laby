@@ -13,7 +13,7 @@ use bin::radarview::{
 use bin::challengehandler::ChallengeHandler;
 use crate::bin::{json_utils, network};
 use crate::bin::ascii_utils::{visualize_cells_like_prof, visualize_radar_ascii};
-
+use crate::bin::map::{Direction, MazeMap, Player};
 
 pub const ADDRESS: &str = "localhost:8778";
 
@@ -23,30 +23,19 @@ pub const ADDRESS: &str = "localhost:8778";
 // -----------------------------------------------------------------------------
 pub struct GameStreamHandler {
     stream: TcpStream,
-    directions: Vec<String>,
+    pub map: MazeMap,      // La carte
+    pub player: Player,    // Le joueur (position + orientation)
 }
 
 impl GameStreamHandler {
+
     pub fn new(stream: TcpStream) -> Self {
-        // On initialise la Map et l'Explorer
         Self {
             stream,
-            directions: vec![
-                "Front".to_string(),
-                "Right".to_string(),
-                "Back".to_string(),
-                "Left".to_string(),
-            ],
+            map: MazeMap::new(),
+            // Imaginons qu'on démarre en (0,0), orienté North
+            player: Player::new(0, 0, Direction::North),
         }
-    }
-
-    fn decide_next_action(&self) -> serde_json::Value {
-        let mut rng = rand::thread_rng();
-        let default_direction = "Front".to_string();
-        let random_direction = self.directions.choose(&mut rng).unwrap_or(&default_direction);
-        println!("Decide next action: {}", random_direction);
-
-        json!({ "MoveTo": random_direction })
     }
 
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
@@ -93,6 +82,11 @@ impl GameStreamHandler {
         }
     }
 
+    /// Exemple très simpliste pour déterminer la prochaine action
+    fn decide_next_action(&self) -> serde_json::Value {
+        json!({"MoveTo": "Front"})
+    }
+
     /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
         let mut challenge_handler = ChallengeHandler::new();
@@ -123,9 +117,13 @@ impl GameStreamHandler {
                         println!("RadarView received: {:?}", radar_view);
                     }
 
+                    // Met à jour la carte en se basant sur ce RadarView
+                    self.map.update_from_radar(radar_str, &mut self.player);
+
                     // 1) Process RadarView => update map
                     self.process_radar_view(radar_str);
 
+                    // (Option) Décider d'une action (ex: MoveTo "Front")
                     let action = self.decide_next_action();
                     println!("Decide next action: {}", action);
 
@@ -133,10 +131,10 @@ impl GameStreamHandler {
                     self.send_action(&action)?;
 
                     // 3) Attendre que l'utilisateur appuie sur Entrée
-                    /*print!("Appuyez sur Entrée pour avancer...");
+                    print!("Appuyez sur Entrée pour avancer...");
                     io::stdout().flush()?; // Assure que le message est affiché avant d'attendre
                     let mut buffer = String::new();
-                    io::stdin().read_line(&mut buffer)?;*/
+                    io::stdin().read_line(&mut buffer)?;
 
                     continue;
                 }
