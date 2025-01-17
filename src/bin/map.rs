@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::bin::radarview::{decode_radar_view, interpret_radar_view};
 use crate::bin::radarview::CellNature::Invalid;
+use crate::bin::radarview::{decode_radar_view, interpret_radar_view, PrettyRadarView, Wall};
+use std::collections::HashMap;
 
 /// Représente l'orientation possible d'un joueur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,9 +16,9 @@ impl Direction {
     pub fn turn_left(self) -> Self {
         match self {
             Direction::North => Direction::West,
-            Direction::West  => Direction::South,
+            Direction::West => Direction::South,
             Direction::South => Direction::East,
-            Direction::East  => Direction::North,
+            Direction::East => Direction::North,
         }
     }
 
@@ -26,9 +26,19 @@ impl Direction {
     pub fn turn_right(self) -> Self {
         match self {
             Direction::North => Direction::East,
-            Direction::East  => Direction::South,
+            Direction::East => Direction::South,
             Direction::South => Direction::West,
-            Direction::West  => Direction::North,
+            Direction::West => Direction::North,
+        }
+    }
+
+    /// Fait demi tour (par ex. North -> South )
+    pub fn turn_back(self) -> Self {
+        match self {
+            Direction::North => Direction::South,
+            Direction::East => Direction::West,
+            Direction::South => Direction::North,
+            Direction::West => Direction::East,
         }
     }
 
@@ -39,30 +49,30 @@ impl Direction {
             Direction::North => match relative_dir {
                 "Front" => Direction::North,
                 "Right" => Direction::East,
-                "Back"  => Direction::South,
-                "Left"  => Direction::West,
-                _       => Direction::North,
+                "Back" => Direction::South,
+                "Left" => Direction::West,
+                _ => Direction::North,
             },
             Direction::East => match relative_dir {
                 "Front" => Direction::East,
                 "Right" => Direction::South,
-                "Back"  => Direction::West,
-                "Left"  => Direction::North,
-                _       => Direction::East,
+                "Back" => Direction::West,
+                "Left" => Direction::North,
+                _ => Direction::East,
             },
             Direction::South => match relative_dir {
                 "Front" => Direction::South,
                 "Right" => Direction::West,
-                "Back"  => Direction::North,
-                "Left"  => Direction::East,
-                _       => Direction::South,
+                "Back" => Direction::North,
+                "Left" => Direction::East,
+                _ => Direction::South,
             },
             Direction::West => match relative_dir {
                 "Front" => Direction::West,
                 "Right" => Direction::North,
-                "Back"  => Direction::East,
-                "Left"  => Direction::South,
-                _       => Direction::West,
+                "Back" => Direction::East,
+                "Left" => Direction::South,
+                _ => Direction::West,
             },
         }
     }
@@ -76,9 +86,23 @@ pub struct Player {
     pub direction: Direction,
 }
 
+impl Default for Player {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            direction: Direction::North,
+        }
+    }
+}
+
 impl Player {
     pub fn new(x: i32, y: i32, direction: Direction) -> Self {
-        Self { x, y, direction }
+        Self {
+            x,
+            y,
+            direction,
+        }
     }
 
     pub fn turn_left(&mut self) {
@@ -87,6 +111,10 @@ impl Player {
 
     pub fn turn_right(&mut self) {
         self.direction = self.direction.turn_right();
+    }
+
+    pub fn turn_back(&mut self) {
+        self.direction = self.direction.turn_back();
     }
 }
 
@@ -97,30 +125,22 @@ pub enum CellState {
     Visited,
 }
 
-/// État d'un mur : ouvert, mur, ou indéfini.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WallStatus {
-    Open,
-    Wall,
-    Undefined,
-}
-
 /// Ensemble des 4 murs d'une cellule.
 #[derive(Debug, Clone)]
 pub struct Walls {
-    pub north: WallStatus,
-    pub east:  WallStatus,
-    pub south: WallStatus,
-    pub west:  WallStatus,
+    pub north: Wall,
+    pub east: Wall,
+    pub south: Wall,
+    pub west: Wall,
 }
 
 impl Default for Walls {
     fn default() -> Self {
         Self {
-            north: WallStatus::Undefined,
-            east:  WallStatus::Undefined,
-            south: WallStatus::Undefined,
-            west:  WallStatus::Undefined,
+            north: Wall::Undefined,
+            east: Wall::Undefined,
+            south: Wall::Undefined,
+            west: Wall::Undefined,
         }
     }
 }
@@ -155,7 +175,7 @@ impl MazeMap {
             grid: HashMap::new(),
         }
     }
-    fn radarview_offset_to_map(
+    fn radarview_offset_to_map_north(
         x: i32,
         y: i32,
         index: usize,
@@ -164,36 +184,60 @@ impl MazeMap {
         // Offsets si le joueur fait face au Nord
         // (index 0 = (x-1, y-1), index 1 = (x, y-1), etc.)
         let offsets_north = [
-            (-1,  1), (0,  1), (1,  1),
-            (-1,  0), (0,  0), (1,  0),
-            (-1, -1), (0, -1), (1, -1),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+            (-1, 0),
+            (0, 0),
+            (1, 0),
+            (-1, -1),
+            (0, -1),
+            (1, -1),
         ];
 
         // Pour East, on tourne "l'ensemble" 90°
         // (front = x+1 => index 1 => (1,0), etc.)
         let offsets_east = [
-            (-1, -1), (-1, 0), (-1, 1),
-            (0, -1), (0, 0), (0, 1),
-            (1, -1), (1, 0), (1, 1),
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 0),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
         ];
 
         let offsets_south = [
-            (1, -1), (0, -1), (-1, -1),
-            (1, 0), (0, 0), (-1, 0),
-            (1, 1), (0, 1), (-1, 1),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (1, 0),
+            (0, 0),
+            (-1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
         ];
 
         let offsets_west = [
-            (1, 1),  (1, 0),  (1, -1),
-            (0, 1),  (0, 0),  (0, -1),
-            (-1, 1), (-1, 0), (-1, -1),
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, 1),
+            (0, 0),
+            (0, -1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
         ];
 
         let (dx, dy) = match current_direction {
             Direction::North => offsets_north[index],
-            Direction::East  => offsets_east[index],
+            Direction::East => offsets_east[index],
             Direction::South => offsets_south[index],
-            Direction::West  => offsets_west[index],
+            Direction::West => offsets_west[index],
         };
 
         (x + dx, y + dy)
@@ -202,6 +246,11 @@ impl MazeMap {
     /// Récupère une cellule en lecture seule.
     pub fn get_cell(&self, x: i32, y: i32) -> Option<&Cell> {
         self.grid.get(&(x, y))
+    }
+
+    /// Vérifie si une cellule existe.
+    pub fn cell_exists(&self, x: i32, y: i32) -> bool {
+        self.grid.contains_key(&(x, y))
     }
 
     /// Récupère (ou crée) une cellule en écriture.
@@ -215,72 +264,87 @@ impl MazeMap {
         let cell = self.get_cell_mut_or_create(x, y);
         cell.walls = walls;
         cell.state = state;
+        println!("Cell x,y : {},{}", x, y);
+        println!("update_cell: {:?}", cell);
+        println!("grid: {:?}", self.grid);
     }
 
-    /// Convertit un string ("Open", "Wall", etc.) en WallStatus
-    fn to_wall_status(s: &str) -> WallStatus {
-        match s {
-            "Open" => WallStatus::Open,
-            "Wall" => WallStatus::Wall,
-            _      => WallStatus::Undefined,
-        }
-    }
 
     /// Met à jour la carte en fonction d'un RadarView reçu (radar_str)
     /// et ajuste la position/orientation du joueur (si nécessaire).
     ///
-    /// - Décode le radar_str via `decode_radar_view`
     /// - Interprète (horizontal_walls, vertical_walls, cells)
     /// - Met à jour la grille (position actuelle + cellules voisines)
-    pub fn update_from_radar(&mut self, radar_str: &str, player: &mut Player) {
-        // 1) Décode le RadarView
-        match decode_radar_view(radar_str) {
-            Ok((hlist, vlist, clist)) => {
-                // 2) Interprète la structure (murs horizontaux/verticaux + cells)
-                let interpreted = interpret_radar_view(&hlist, &vlist, &clist);
+    pub fn update_from_radar(&mut self, radarview: &PrettyRadarView, player: &mut Player) {
+        // 2) Interprète la structure (murs horizontaux/verticaux + cells)
+        let interpreted = radarview;
 
-                // Les 4 premiers indices : horizontaux (north/south) et verticaux (east/west)
-                // peuvent varier selon l'ordre imposé par votre decode.
-                // Ici on suppose que horizontal_walls[0] correspond à "north"
-                // et horizontal_walls[2] correspond à "south", etc.
-                /*let w = Walls {
-                    north: Self::to_wall_status(&interpreted.horizontal_walls[0].to_string()),
-                    east:  Self::to_wall_status(&interpreted.vertical_walls[1].to_string()),
-                    south: Self::to_wall_status(&interpreted.horizontal_walls[2].to_string()),
-                    west:  Self::to_wall_status(&interpreted.vertical_walls[3].to_string()),
-                };
+        print!("map.rs: ");
+        println!("{:?}", interpreted);
+        println!("{:?}", player);
 
-                // On met à jour la cellule actuelle du joueur (x,y).
-                self.update_cell(player.x, player.y, w, CellState::Visited);*/
+        let w = Walls {
+            north: interpreted.horizontal_walls[4],
+            east:  interpreted.vertical_walls[6],
+            south: interpreted.horizontal_walls[7],
+            west:  interpreted.vertical_walls[5],
+        };
 
-                // Mise à jour des 9 "cells" autour du joueur (3x3),
-                // dont la cellule centrale est la position actuelle (index 4).
-                // Vous pouvez changer la logique selon l'indexation que vous utilisez.
-                for (i, cell_decoded) in interpreted.cells.iter().enumerate() {
-                    if cell_decoded.nature == Invalid {
-                        continue;
-                    }
+        println!("{:?}", w);
 
-                    // Ex. : mapping simplifié d'un 3x3 :
-                    // 0 1 2
-                    // 3 4 5
-                    // 6 7 8
-                    // `4` = centre, la position actuelle du joueur.
-                    let dx = (i % 3) as i32 - 1; // -1, 0, +1
-                    let dy = (i / 3) as i32 - 1; // -1, 0, +1
 
-                    let nx = player.x + dx;
-                    let ny = player.y + dy;
+        // On met à jour la cellule actuelle du joueur (x,y).
+        self.update_cell(player.x, player.y, w, CellState::Visited);
 
-                    // On crée la cellule si elle n'existe pas.
-                    self.get_cell_mut_or_create(nx, ny);
-                    // Potentiellement, vous pouvez stocker d'autres infos
-                    // venant de cell_decoded (ex: `entity`).
-                }
+        // Mise à jour des 9 "cells" autour du joueur (3x3),
+        // dont la cellule centrale est la position actuelle (index 4).
+        // Vous pouvez changer la logique selon l'indexation que vous utilisez.
+        for (i, cell_decoded) in interpreted.cells.iter().enumerate() {
+            println!("i: {}", i);
+            if i == 4 {
+                continue; // On ignore la cellule centrale (le joueur est déjà traité)
             }
-            Err(e) => {
-                eprintln!("Erreur decode_radar_view: {}", e);
+            if cell_decoded.nature == Invalid {
+                continue;
             }
+
+            // Ex. : mapping simplifié d'un 3x3 :
+            // 0 1 2
+            // 3 4 5
+            // 6 7 8
+            // `4` = centre, la position actuelle du joueur.
+            // On calcule les offsets en fonction de la direction actuelle du joueur.
+            let (dx, dy) = Self::radarview_offset_to_map_north(player.x, player.y, i, player.direction);
+            println!("dx, dy: {},{}", dx, dy);
+
+            // On crée la cellule si elle n'existe pas.
+            self.get_cell_mut_or_create(dx, dy);
+
+            let mut y = 0;
+            if i == 0 || i == 1 || i == 2 {
+                y = 0;
+            } else if i == 3 || i == 4 || i == 5 {
+                y = 1;
+            } else if i == 6 || i == 7 || i == 8 {
+                y = 2;
+            }
+
+            // On recupère les murs de la cellule
+            let walls = Walls {
+                north: interpreted.horizontal_walls[i],
+                east:  interpreted.vertical_walls[i + y + 1],
+                south: interpreted.horizontal_walls[i + 3],
+                west:  interpreted.vertical_walls[i + y],
+            };
+            println!("Interpreted walls: {:?}", interpreted);
+            println!("walls: {:?}", walls);
+
+
+            self.update_cell(dx, dy, walls, CellState::NotVisited);
+
+            println!("new cell: {:?}", self.get_cell(dx, dy));
+
         }
+        println!("grid: {:?}", self.grid);
     }
 }

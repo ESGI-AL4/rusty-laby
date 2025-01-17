@@ -1,8 +1,9 @@
+use std::any::Any;
 use serde_json::json;
 use std::io;
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
-use rand::seq::SliceRandom;
+use rand::seq::{IndexedRandom, SliceRandom};
 
 mod bin;
 
@@ -14,6 +15,8 @@ use bin::challengehandler::ChallengeHandler;
 use crate::bin::{json_utils, network};
 use crate::bin::ascii_utils::{visualize_cells_like_prof, visualize_radar_ascii};
 use crate::bin::map::{Direction, MazeMap, Player};
+use crate::bin::radarview::PrettyRadarView;
+use crate::bin::radarview::Wall::Open;
 
 pub const ADDRESS: &str = "localhost:8778";
 
@@ -53,7 +56,7 @@ impl GameStreamHandler {
         Ok(())
     }
 
-    fn process_radar_view(&mut self, radar_str: &str) {
+    fn process_radar_view(&mut self, radar_str: &str) -> PrettyRadarView {
         match decode_radar_view(radar_str) {
             Ok((h, v, c)) => {
                 println!("=== Decoded Raw RadarView ===");
@@ -67,6 +70,10 @@ impl GameStreamHandler {
                 println!("Vertical walls:   {:?}", pretty.vertical_walls);
                 println!("Cells(decodées)  : {:?}", pretty.cells);
 
+                println!("Horizontal walls 1 : {:?}", pretty.horizontal_walls[0]);
+                println!("Vertical walls 1   : {:?}", pretty.vertical_walls[0]);
+                println!("Cells(decodées) 1  : {:?}", pretty.cells[0]);
+
                 // (Optionnel) Pour un style "Undefined, Rien, Undefined"
                 let cells_str = visualize_cells_like_prof(&pretty.cells);
                 println!("{}", cells_str);
@@ -75,9 +82,18 @@ impl GameStreamHandler {
                 println!("--- ASCII Radar ---\n{}", ascii);
                 println!("=====================================");
 
+                //return pretty;
+                pretty
+
             }
             Err(e) => {
                 eprintln!("Erreur lors du décodage du RadarView: {}", e);
+                // Retourner une valeur par défaut
+                PrettyRadarView {
+                    horizontal_walls: vec![],
+                    vertical_walls: vec![],
+                    cells: vec![],
+                }
             }
         }
     }
@@ -117,18 +133,48 @@ impl GameStreamHandler {
                         println!("RadarView received: {:?}", radar_view);
                     }
 
-                    // Met à jour la carte en se basant sur ce RadarView
-                    self.map.update_from_radar(radar_str, &mut self.player);
-
                     // 1) Process RadarView => update map
-                    self.process_radar_view(radar_str);
+                    let pretty = self.process_radar_view(radar_str);
+
+                    println!("player walls: ");
+                    println!("     {:?}", pretty.horizontal_walls[4]);
+                    println!("{:?}  /*/   {:?}", pretty.vertical_walls[5], pretty.vertical_walls[6]);
+                    println!("     {:?}", pretty.horizontal_walls[7]);
+
+                    // Met à jour la carte en se basant sur ce RadarView
+                    self.map.update_from_radar(&pretty, &mut self.player);
+
+
+                    let mut moove = vec![];
+
+                    // 2) (Option) Décider d'une action (ex: MoveTo "Front")
+                    if pretty.vertical_walls[6] == Open {
+                        moove.push("Right");
+                    }
+                    if pretty.vertical_walls[5] == Open {
+                        moove.push("Left");
+                    }
+                    if pretty.horizontal_walls[4] == Open {
+                        moove.push("Front");
+                    }
+                    if pretty.horizontal_walls[7] == Open {
+                        moove.push("Back");
+                    }
+
+                    println!("moove: {:?}", moove);
+
+                    let action = json!({"MoveTo": moove.choose(&mut rand::rng()).unwrap()});
+                    println!("Decide next action: {:?}", action);
 
                     // (Option) Décider d'une action (ex: MoveTo "Front")
-                    let action = self.decide_next_action();
-                    println!("Decide next action: {}", action);
+                    //let action = self.decide_next_action();
+                    //println!("Decide next action: {}", action);
 
                     // 2) Envoyer l'action
                     self.send_action(&action)?;
+
+                    //update player position and direction
+
 
                     // 3) Attendre que l'utilisateur appuie sur Entrée
                     print!("Appuyez sur Entrée pour avancer...");
