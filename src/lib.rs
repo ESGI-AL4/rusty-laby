@@ -70,10 +70,6 @@ impl GameStreamHandler {
                 println!("Vertical walls:   {:?}", pretty.vertical_walls);
                 println!("Cells(decodées)  : {:?}", pretty.cells);
 
-                println!("Horizontal walls 1 : {:?}", pretty.horizontal_walls[0]);
-                println!("Vertical walls 1   : {:?}", pretty.vertical_walls[0]);
-                println!("Cells(decodées) 1  : {:?}", pretty.cells[0]);
-
                 // (Optionnel) Pour un style "Undefined, Rien, Undefined"
                 let cells_str = visualize_cells_like_prof(&pretty.cells);
                 println!("{}", cells_str);
@@ -96,11 +92,6 @@ impl GameStreamHandler {
                 }
             }
         }
-    }
-
-    /// Exemple très simpliste pour déterminer la prochaine action
-    fn decide_next_action(&self) -> serde_json::Value {
-        json!({"MoveTo": "Front"})
     }
 
     /// Boucle principale
@@ -163,17 +154,24 @@ impl GameStreamHandler {
 
                     println!("moove: {:?}", moove);
 
-                    let action = json!({"MoveTo": moove.choose(&mut rand::rng()).unwrap()});
+                    let action = moove.choose(&mut rand::rng()).unwrap();
+                    let action_json = json!({"MoveTo": action});
                     println!("Decide next action: {:?}", action);
 
-                    // (Option) Décider d'une action (ex: MoveTo "Front")
-                    //let action = self.decide_next_action();
-                    //println!("Decide next action: {}", action);
+                    // Print Player
+                    println!("Player: {:?}", self.player);
 
                     // 2) Envoyer l'action
-                    self.send_action(&action)?;
+                    self.send_action(&action_json)?;
 
                     //update player position and direction
+                    self.map.update_player(&mut self.player, &action);
+
+                    // Print Player après l'update
+                    println!("Player: {:?}", self.player);
+
+                    // Print Map
+                    self.map.display_map(Option::from((self.player.x, self.player.y)));
 
 
                     // 3) Attendre que l'utilisateur appuie sur Entrée

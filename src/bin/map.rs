@@ -76,6 +76,49 @@ impl Direction {
             },
         }
     }
+
+    //Nouvelle position du joueur après un mouvement
+    pub fn new_position(self, x: i32, y: i32, action: &str) -> (i32, i32) {
+        match action {
+            "Front" => {
+                let (dx, dy) = match self {
+                    Direction::North => (0, 1),
+                    Direction::East => (1, 0),
+                    Direction::South => (0, -1),
+                    Direction::West => (-1, 0),
+                };
+                (x + dx, y + dy)
+            }
+            "Back" => {
+                let (dx, dy) = match self {
+                    Direction::North => (0, -1),
+                    Direction::East => (-1, 0),
+                    Direction::South => (0, 1),
+                    Direction::West => (1, 0),
+                };
+                (x + dx, y + dy)
+            }
+            "Right" => {
+                let (dx, dy) = match self {
+                    Direction::North => (1, 0),
+                    Direction::East => (0, -1),
+                    Direction::South => (-1, 0),
+                    Direction::West => (0, 1),
+                };
+                (x + dx, y + dy)
+            }
+            "Left" => {
+                let (dx, dy) = match self {
+                    Direction::North => (-1, 0),
+                    Direction::East => (0, 1),
+                    Direction::South => (1, 0),
+                    Direction::West => (0, -1),
+                };
+                (x + dx, y + dy)
+            }
+            _ => (x, y),
+        }
+    }
 }
 
 /// Représente l'état du joueur (sa position et son orientation).
@@ -262,13 +305,27 @@ impl MazeMap {
     /// Par ex., passer l'état en Visited, mettre à jour certains murs, etc.
     pub fn update_cell(&mut self, x: i32, y: i32, walls: Walls, state: CellState) {
         let cell = self.get_cell_mut_or_create(x, y);
+
+        // Conserver l’état Visited si déjà visité
+        if cell.state == CellState::Visited {
+            cell.state = CellState::Visited;
+        } else {
+            cell.state = state;
+        }
+
         cell.walls = walls;
-        cell.state = state;
         println!("Cell x,y : {},{}", x, y);
         println!("update_cell: {:?}", cell);
         println!("grid: {:?}", self.grid);
     }
 
+    /// Update the player position and direction after a move
+    pub fn update_player(&mut self, player: &mut Player, action: &str) {
+        let (x, y) = player.direction.new_position(player.x, player.y, action);
+        player.x = x;
+        player.y = y;
+        player.direction = player.direction.relative_to_absolute(action);
+    }
 
     /// Met à jour la carte en fonction d'un RadarView reçu (radar_str)
     /// et ajuste la position/orientation du joueur (si nécessaire).
@@ -347,4 +404,151 @@ impl MazeMap {
         }
         println!("grid: {:?}", self.grid);
     }
+
+    /// Fonction pour afficher la carte dans la console.
+    pub fn display_map(&self, player_position: Option<(i32, i32)>) {
+        // On récupère la grille en référence immuable pour ne pas la déplacer
+        let grid = &self.grid;
+
+        if grid.is_empty() {
+            println!("La carte est vide.");
+            return;
+        }
+
+        // Déterminer les limites de la carte
+        let min_x = grid.keys().map(|&(x, _)| x).min().unwrap();
+        let max_x = grid.keys().map(|&(x, _)| x).max().unwrap();
+        let min_y = grid.keys().map(|&(_, y)| y).min().unwrap();
+        let max_y = grid.keys().map(|&(_, y)| y).max().unwrap();
+
+        // Taille de la carte
+        let width = (max_x - min_x + 1) as usize;
+        let height = (max_y - min_y + 1) as usize;
+
+        // Initialiser une grille de caractères ASCII
+        // On prévoit (width * 3 + 1) colonnes, (height * 2 + 1) lignes
+        let mut ascii_grid: Vec<Vec<char>> = vec![vec![' '; (width * 3 + 1)]; (height * 2 + 1)];
+
+        // Parcourt toutes les positions du min au max
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let cell_opt = grid.get(&(x, y));
+
+                // On calcule les indices dans la grille ASCII.
+                // Le "grid_x" se base sur (x - min_x), et "grid_y" se base sur (max_y - y)
+                // pour que la case (min_x, max_y) soit en haut à gauche.
+                let grid_x = ((x - min_x) * 3) as usize;
+                let grid_y = ((max_y - y) * 2) as usize;
+
+                if let Some(cell) = cell_opt {
+                    // MUR NORD
+                    match cell.walls.north {
+                        Wall::Wall => {
+                            ascii_grid[grid_y][grid_x + 1] = '-';
+                            ascii_grid[grid_y][grid_x + 2] = '-';
+                        }
+                        Wall::Open | Wall::Undefined => {
+                            ascii_grid[grid_y][grid_x + 1] = ' ';
+                            ascii_grid[grid_y][grid_x + 2] = ' ';
+                        }
+                    }
+
+                    // MUR OUEST
+                    match cell.walls.west {
+                        Wall::Wall => {
+                            ascii_grid[grid_y + 1][grid_x] = '|';
+                        }
+                        Wall::Open | Wall::Undefined => {
+                            ascii_grid[grid_y + 1][grid_x] = ' ';
+                        }
+                    }
+
+                    // MUR EST
+                    match cell.walls.east {
+                        Wall::Wall => {
+                            ascii_grid[grid_y + 1][grid_x + 3] = '|';
+                        }
+                        Wall::Open | Wall::Undefined => {
+                            ascii_grid[grid_y + 1][grid_x + 3] = ' ';
+                        }
+                    }
+
+                    // MUR SUD
+                    match cell.walls.south {
+                        Wall::Wall => {
+                            ascii_grid[grid_y + 2][grid_x + 1] = '-';
+                            ascii_grid[grid_y + 2][grid_x + 2] = '-';
+                        }
+                        Wall::Open | Wall::Undefined => {
+                            ascii_grid[grid_y + 2][grid_x + 1] = ' ';
+                            ascii_grid[grid_y + 2][grid_x + 2] = ' ';
+                        }
+                    }
+
+                    // Caractère pour l'état de la cellule
+                    let cell_char = match cell.state {
+                        CellState::Visited => 'V',
+                        CellState::NotVisited => '.',
+                    };
+
+                    // Si on a un joueur et qu'il est à cette position
+                    let display_char = if let Some(pos) = player_position {
+                        if pos == (x, y) {
+                            'P'
+                        } else {
+                            cell_char
+                        }
+                    } else {
+                        cell_char
+                    };
+
+                    ascii_grid[grid_y + 1][grid_x + 1] = display_char;
+                } else {
+                    // Cellule inexistante => on laisse des espaces
+                    // (on pourrait mettre un '?' ou autre pour visualiser les trous)
+                    ascii_grid[grid_y][grid_x + 1] = ' ';
+                    ascii_grid[grid_y + 1][grid_x] = ' ';
+                    ascii_grid[grid_y + 1][grid_x + 1] = ' ';
+                    ascii_grid[grid_y + 1][grid_x + 3] = ' ';
+                    ascii_grid[grid_y + 2][grid_x + 1] = ' ';
+                    ascii_grid[grid_y + 2][grid_x + 2] = ' ';
+                }
+            }
+        }
+
+        // Dessiner la bordure droite (mur de l'est) pour la dernière colonne
+        for row in 0..=(height * 2) {
+            let col = (width * 3) as usize;
+            ascii_grid[row][col] = '|';
+        }
+
+        // Dessiner la bordure supérieure
+        for col in 0..=width {
+            let xx = (col * 3) as usize;
+            let yy = 0;
+            ascii_grid[yy][xx] = '+';
+        }
+        // Dessiner la bordure inférieure
+        for col in 0..=width {
+            let xx = (col * 3) as usize;
+            let yy = (height * 2) as usize;
+            ascii_grid[yy][xx] = '+';
+        }
+
+        // Dessiner les intersections internes
+        for row in 0..=height * 2 {
+            for col in 0..=width * 3 {
+                if row % 2 == 0 && col % 3 == 0 {
+                    ascii_grid[row][col] = '+';
+                }
+            }
+        }
+
+        // Imprimer la grille ASCII ligne par ligne
+        for row in ascii_grid {
+            let line: String = row.into_iter().collect();
+            println!("{}", line);
+        }
+    }
+
 }
