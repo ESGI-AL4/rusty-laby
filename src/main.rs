@@ -25,6 +25,8 @@ fn main() -> io::Result<()> {
     println!("Player subscribed successfully!");
 
     let mut game_stream = GameStreamHandler::new(game_stream);
+    // *** On init Piston ici ***
+    game_stream.init_piston();
     let _ = GameStreamHandler::handle(&mut game_stream);
 
     Ok(())

@@ -7,6 +7,12 @@ use rand::seq::{IndexedRandom, SliceRandom};
 
 mod bin;
 
+// On importe piston_window
+use piston_window::{
+    PistonWindow, WindowSettings, EventLoop, RenderEvent,
+    clear, rectangle, Context, G2d,
+};
+
 use bin::radarview::{
     decode_radar_view, interpret_radar_view,
 };
@@ -28,6 +34,8 @@ pub struct GameStreamHandler {
     stream: TcpStream,
     pub map: MazeMap,      // La carte
     pub player: Player,    // Le joueur (position + orientation)
+    // Ajout: la fenêtre Piston
+    pub window: Option<PistonWindow>,
 }
 
 impl GameStreamHandler {
@@ -38,7 +46,21 @@ impl GameStreamHandler {
             map: MazeMap::new(),
             // Imaginons qu'on démarre en (0,0), orienté North
             player: Player::new(0, 0, Direction::North),
+
+            window: None, // pas encore initialisé
         }
+    }
+
+    /// On appelle cette fonction dans `main` (après la création).
+    /// Ici, on crée la fenêtre PistonWindow, qu’on stocke dans `self.window`.
+    pub fn init_piston(&mut self) {
+        let mut win: PistonWindow = WindowSettings::new("Maze with Piston", [800, 800])
+            .exit_on_esc(true)
+            .build()
+            .unwrap();
+        win.set_max_fps(30);
+
+        self.window = Some(win);
     }
 
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
@@ -59,10 +81,10 @@ impl GameStreamHandler {
     fn process_radar_view(&mut self, radar_str: &str) -> PrettyRadarView {
         match decode_radar_view(radar_str) {
             Ok((h, v, c)) => {
-                println!("=== Decoded Raw RadarView ===");
-                println!("Horizontals: {:?}", h);
-                println!("Verticals:   {:?}", v);
-                println!("Cells:       {:?}", c);
+                //println!("=== Decoded Raw RadarView ===");
+                //println!("Horizontals: {:?}", h);
+                //println!("Verticals:   {:?}", v);
+                //println!("Cells:       {:?}", c);
 
                 let pretty = interpret_radar_view(&h, &v, &c);
                 println!("--- Interpreted RadarView ---");
@@ -75,8 +97,8 @@ impl GameStreamHandler {
                 println!("{}", cells_str);
 
                 let ascii = visualize_radar_ascii(&pretty);
-                println!("--- ASCII Radar ---\n{}", ascii);
-                println!("=====================================");
+                //println!("--- ASCII Radar ---\n{}", ascii);
+                //println!("=====================================");
 
                 //return pretty;
                 pretty
@@ -99,7 +121,15 @@ impl GameStreamHandler {
         let mut challenge_handler = ChallengeHandler::new();
         let mut challenge_count = 0;
 
+        if self.window.is_none() {
+            // on peut paniquer ou le faire nous-même
+            eprintln!("PistonWindow not initialized, call init_piston() first!");
+            return Ok(());
+        }
+        let mut win = self.window.take().unwrap(); // on récupère la fenêtre localement
+
         loop {
+
             let parsed_msg = self.receive_and_parse_message()?;
 
             // Gestion des erreurs d'action
@@ -124,7 +154,7 @@ impl GameStreamHandler {
                         println!("RadarView received: {:?}", radar_view);
                     }
 
-                    // 1) Process RadarView => update map
+                    // 1) Process RadarView
                     let pretty = self.process_radar_view(radar_str);
 
                     println!("player walls: ");
@@ -171,14 +201,28 @@ impl GameStreamHandler {
                     println!("Player: {:?}", self.player);
 
                     // Print Map
-                    self.map.display_map(Option::from((self.player.x, self.player.y)));
+                    self.map.display_map(Option::from((self.player.x, self.player.y)), &self.player);
+
+                    if let Some(event) = win.next() {
+                        // 1) dessiner
+                        if let Some(_r) = event.render_args() {
+                            // on dessine
+                            win.draw_2d(&event, |context, graphics, _device| {
+                                clear([0.0, 0.0, 0.0, 1.0], graphics);
+
+                                // On appelle la fonction piston de la map
+                                self.map.draw_piston(context, graphics, self.player.x, self.player.y, &self.player);
+                            });
+                        }
+                    }
 
 
                     // 3) Attendre que l'utilisateur appuie sur Entrée
-                    print!("Appuyez sur Entrée pour avancer...");
+                    /*print!("Appuyez sur Entrée pour avancer...");
                     io::stdout().flush()?; // Assure que le message est affiché avant d'attendre
                     let mut buffer = String::new();
-                    io::stdin().read_line(&mut buffer)?;
+                    io::stdin().read_line(&mut buffer)?;*/
+
 
                     continue;
                 }
