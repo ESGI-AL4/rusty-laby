@@ -2,6 +2,7 @@ use serde_json::json;
 use std::io;
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
+use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 
 mod bin;
