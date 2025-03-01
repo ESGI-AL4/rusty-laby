@@ -5,3 +5,8 @@ pub mod team_registration;
 pub mod json_utils;
 pub mod ascii_utils;
 pub mod map;
+pub mod direction;
+pub mod player;
+pub mod cellstate;
+pub mod walls;
+pub mod cell;

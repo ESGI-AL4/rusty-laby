@@ -1,5 +1,10 @@
 use crate::bin::radarview::CellNature::Invalid;
 use crate::bin::radarview::{decode_radar_view, interpret_radar_view, PrettyRadarView, Wall};
+use crate::bin::direction::Direction;
+use crate::bin::player::Player;
+use crate::bin::cellstate::CellState;
+use crate::bin::walls::Walls;
+use crate::bin::cell::Cell;
 use std::collections::HashMap;
 use piston_window::{Context, G2d, rectangle, line};
 use piston_window::color::BLUE;
@@ -19,210 +24,17 @@ pub const CELL_SIZE: f64 = 16.0;
 pub const GAP: f64 = 4.0;
 
 /// Représente l'orientation possible d'un joueur.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Direction {
-    North,
-    East,
-    South,
-    West,
-}
-
-impl Direction {
-    /// Tourne à gauche (par ex. North -> West)
-    pub fn turn_left(self) -> Self {
-        match self {
-            Direction::North => Direction::West,
-            Direction::West => Direction::South,
-            Direction::South => Direction::East,
-            Direction::East => Direction::North,
-        }
-    }
-
-    /// Tourne à droite (par ex. North -> East)
-    pub fn turn_right(self) -> Self {
-        match self {
-            Direction::North => Direction::East,
-            Direction::East => Direction::South,
-            Direction::South => Direction::West,
-            Direction::West => Direction::North,
-        }
-    }
-
-    /// Fait demi tour (par ex. North -> South )
-    pub fn turn_back(self) -> Self {
-        match self {
-            Direction::North => Direction::South,
-            Direction::East => Direction::West,
-            Direction::South => Direction::North,
-            Direction::West => Direction::East,
-        }
-    }
-
-    /// Convertit une direction relative (Front/Right/Back/Left)
-    /// en direction absolue, en fonction de l'orientation actuelle.
-    pub fn relative_to_absolute(self, relative_dir: &str) -> Self {
-        match self {
-            Direction::North => match relative_dir {
-                "Front" => Direction::North,
-                "Right" => Direction::East,
-                "Back" => Direction::South,
-                "Left" => Direction::West,
-                _ => Direction::North,
-            },
-            Direction::East => match relative_dir {
-                "Front" => Direction::East,
-                "Right" => Direction::South,
-                "Back" => Direction::West,
-                "Left" => Direction::North,
-                _ => Direction::East,
-            },
-            Direction::South => match relative_dir {
-                "Front" => Direction::South,
-                "Right" => Direction::West,
-                "Back" => Direction::North,
-                "Left" => Direction::East,
-                _ => Direction::South,
-            },
-            Direction::West => match relative_dir {
-                "Front" => Direction::West,
-                "Right" => Direction::North,
-                "Back" => Direction::East,
-                "Left" => Direction::South,
-                _ => Direction::West,
-            },
-        }
-    }
-
-    //Nouvelle position du joueur après un mouvement
-    pub fn new_position(self, x: i32, y: i32, action: &str) -> (i32, i32) {
-        match action {
-            "Front" => {
-                let (dx, dy) = match self {
-                    Direction::North => (0, 1),
-                    Direction::East => (1, 0),
-                    Direction::South => (0, -1),
-                    Direction::West => (-1, 0),
-                };
-                (x + dx, y + dy)
-            }
-            "Back" => {
-                let (dx, dy) = match self {
-                    Direction::North => (0, -1),
-                    Direction::East => (-1, 0),
-                    Direction::South => (0, 1),
-                    Direction::West => (1, 0),
-                };
-                (x + dx, y + dy)
-            }
-            "Right" => {
-                let (dx, dy) = match self {
-                    Direction::North => (1, 0),
-                    Direction::East => (0, -1),
-                    Direction::South => (-1, 0),
-                    Direction::West => (0, 1),
-                };
-                (x + dx, y + dy)
-            }
-            "Left" => {
-                let (dx, dy) = match self {
-                    Direction::North => (-1, 0),
-                    Direction::East => (0, 1),
-                    Direction::South => (1, 0),
-                    Direction::West => (0, -1),
-                };
-                (x + dx, y + dy)
-            }
-            _ => (x, y),
-        }
-    }
-}
 
 /// Représente l'état du joueur (sa position et son orientation).
-#[derive(Debug)]
-pub struct Player {
-    pub x: i32,
-    pub y: i32,
-    pub direction: Direction,
-    /// Chemin parcouru: positions successives
-    pub path: Vec<(i32, i32)>,
-}
 
-impl Default for Player {
-    fn default() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            direction: Direction::North,
-            path: Vec::new(),
-        }
-    }
-}
-
-impl Player {
-    pub fn new(x: i32, y: i32, direction: Direction) -> Self {
-        Self {
-            x,
-            y,
-            direction,
-            path: vec![(x, y)],
-        }
-    }
-
-    pub fn turn_left(&mut self) {
-        self.direction = self.direction.turn_left();
-    }
-
-    pub fn turn_right(&mut self) {
-        self.direction = self.direction.turn_right();
-    }
-
-    pub fn turn_back(&mut self) {
-        self.direction = self.direction.turn_back();
-    }
-}
 
 /// État d'une cellule de la carte (visitée ou pas).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CellState {
-    NotVisited,
-    Visited,
-}
+
 
 /// Ensemble des 4 murs d'une cellule.
-#[derive(Debug, Clone)]
-pub struct Walls {
-    pub north: Wall,
-    pub east: Wall,
-    pub south: Wall,
-    pub west: Wall,
-}
 
-impl Default for Walls {
-    fn default() -> Self {
-        Self {
-            north: Wall::Undefined,
-            east: Wall::Undefined,
-            south: Wall::Undefined,
-            west: Wall::Undefined,
-        }
-    }
-}
 
 /// Structure d'une cellule : murs + état de visite.
-#[derive(Debug, Clone)]
-pub struct Cell {
-    pub walls: Walls,
-    pub state: CellState,
-}
-
-impl Cell {
-    pub fn new() -> Self {
-        Self {
-            walls: Walls::default(),
-            state: CellState::NotVisited,
-        }
-    }
-}
 
 /// Carte du labyrinthe, stockée dans une HashMap dynamique.
 /// Les clés sont les coordonnées (x,y) de chaque cellule.
@@ -327,6 +139,24 @@ impl MazeMap {
         self.grid.get(&(x, y))
     }
 
+    pub fn is_cell_visited(&self, player:Player,  direction: Direction) -> bool {
+        let x = player.x;
+        let y = player.y;
+        //get cell x and y based on player position and direction
+        let (dx, dy) = match direction {
+            Direction::North => (x, y + 1),
+            Direction::East => (x + 1, y),
+            Direction::South => (x, y - 1),
+            Direction::West => (x - 1, y),
+        };
+        //check if cell is visited
+        let cell = self.get_cell(dx, dy);
+        if let Some(cell) = cell {
+            return cell.state == CellState::Visited;
+        }
+        return false;
+    }
+
     /// Vérifie si une cellule existe.
     pub fn cell_exists(&self, x: i32, y: i32) -> bool {
         self.grid.contains_key(&(x, y))
@@ -371,7 +201,8 @@ impl MazeMap {
             // => On a trouvé (nx, ny) dans la pile, à l'index pos_index
 
             // On retire tout ce qui est après pos_index
-            player.path.truncate(pos_index + 1);
+            // player.path.truncate(pos_index + 1);
+            // player.directions_path.truncate(pos_index + 2);
             // i.e. si pos_index = 3, on supprime tout au-delà de l'index 3,
             // ce qui ramène la pile au moment exact où on était à (nx, ny).
 
