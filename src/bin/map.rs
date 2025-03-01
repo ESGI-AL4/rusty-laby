@@ -201,8 +201,8 @@ impl MazeMap {
             // => On a trouvé (nx, ny) dans la pile, à l'index pos_index
 
             // On retire tout ce qui est après pos_index
-            player.path.truncate(pos_index + 1);
-            player.directions_path.truncate(pos_index + 2);
+            // player.path.truncate(pos_index + 1);
+            // player.directions_path.truncate(pos_index + 2);
             // i.e. si pos_index = 3, on supprime tout au-delà de l'index 3,
             // ce qui ramène la pile au moment exact où on était à (nx, ny).
 
