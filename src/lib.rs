@@ -1,4 +1,5 @@
 use std::any::Any;
+use bin::direction;
 use serde_json::json;
 use std::io;
 use std::io::{BufRead, Write};
@@ -20,7 +21,9 @@ use bin::radarview::{
 use bin::challengehandler::ChallengeHandler;
 use crate::bin::{json_utils, network};
 use crate::bin::ascii_utils::{visualize_cells_like_prof, visualize_radar_ascii};
-use crate::bin::map::{Direction, MazeMap, Player};
+use crate::bin::map::MazeMap;
+use crate::bin::player::Player;
+use crate::bin::direction::Direction;
 use crate::bin::radarview::PrettyRadarView;
 use crate::bin::radarview::Wall::Open;
 
@@ -166,24 +169,53 @@ impl GameStreamHandler {
                     self.map.update_from_radar(&pretty, &mut self.player);
 
 
-                    let mut moove = vec![];
+                    let mut moove: Vec<String> = vec![];
 
                     // 2) (Option) Décider d'une action (ex: MoveTo "Front")
                     if pretty.vertical_walls[6] == Open {
-                        moove.push("Right");
+                        println!("DEBUG>>>>>Right is open");
+                        let direction = self.player.direction.relative_to_absolute("Right");
+                        if self.map.is_cell_visited(self.player.clone(), direction) == false {
+                            println!("DEBUG>>>>>Right is not visited");
+                            moove.push("Right".to_string());
+                        }
                     }
                     if pretty.vertical_walls[5] == Open {
-                        moove.push("Left");
+                        println!("DEBUG>>>>>Left is open");
+                        let direction = self.player.direction.relative_to_absolute("Left");
+                        if self.map.is_cell_visited(self.player.clone(), direction) == false {
+                            println!("DEBUG>>>>>Left is not visited");
+                            moove.push("Left".to_string());
+                        }
                     }
                     if pretty.horizontal_walls[4] == Open {
-                        moove.push("Front");
+                        println!("DEBUG>>>>>Front is open");
+                        let direction = self.player.direction.relative_to_absolute("Front");
+                        if self.map.is_cell_visited(self.player.clone(), direction) == false {
+                            println!("DEBUG>>>>>Front is not visited");
+                            moove.push("Front".to_string());
+                        }
                     }
                     if pretty.horizontal_walls[7] == Open {
-                        moove.push("Back");
+                        println!("DEBUG>>>>>Back is open");
+                        let direction: Direction = self.player.direction.relative_to_absolute( "Back");
+                        if self.map.is_cell_visited(self.player.clone(), direction) == false {
+                            println!("DEBUG>>>>>Back is not visited");
+                            moove.push("Back".to_string()); 
+                        }
                     }
 
                     println!("moove: {:?}", moove);
-
+                    let mut back = false;
+                    if moove.is_empty() && !self.player.directions_path.is_empty() {
+                        println!("DEBUG>>>>>DECIDED TO MOVE BACK ON PATH");
+                        if let Some(move_back) = self.player.directions_path.pop() {
+                            back = true;
+                            moove.push(move_back.clone());
+                            self.player.path.pop();
+                        }
+                    }
+                    
                     let action = moove.choose(&mut rand::rng()).unwrap();
                     let action_json = json!({"MoveTo": action});
                     println!("Decide next action: {:?}", action);
@@ -192,6 +224,9 @@ impl GameStreamHandler {
                     println!("Player: {:?}", self.player);
 
                     // 2) Envoyer l'action
+                    if !back {
+                        self.player.directions_path.push(self.player.direction.relative_oposite(action.clone()));
+                    }
                     self.send_action(&action_json)?;
 
                     //update player position and direction
@@ -218,10 +253,10 @@ impl GameStreamHandler {
 
 
                     // 3) Attendre que l'utilisateur appuie sur Entrée
-                    /*print!("Appuyez sur Entrée pour avancer...");
-                    io::stdout().flush()?; // Assure que le message est affiché avant d'attendre
-                    let mut buffer = String::new();
-                    io::stdin().read_line(&mut buffer)?;*/
+                    // print!("Appuyez sur Entrée pour avancer...");
+                    // io::stdout().flush()?; // Assure que le message est affiché avant d'attendre
+                    // let mut buffer = String::new();
+                    // io::stdin().read_line(&mut buffer)?;
 
 
                     continue;
