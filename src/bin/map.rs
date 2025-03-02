@@ -44,8 +44,8 @@ pub struct MazeMap {
 }
 
 fn merge_wall(old: Wall, new: Wall) -> Wall {
-    println!("old: {:?}", old);
-    println!("new: {:?}", new);
+    // println!("old: {:?}", old);
+    // println!("new: {:?}", new);
     match (old, new) {
         (Wall::Undefined, Wall::Undefined) => Wall::Undefined,
         (Wall::Undefined, Wall::Wall) => Wall::Wall,
@@ -177,7 +177,7 @@ impl MazeMap {
         cell.walls.east  = merge_wall(cell.walls.east,  new_walls.east);
         cell.walls.south = merge_wall(cell.walls.south, new_walls.south);
         cell.walls.west  = merge_wall(cell.walls.west,  new_walls.west);
-        println!("update_cell: {:?}", cell);
+        // println!("update_cell: {:?}", cell);
 
         // Conserver l’état Visited si déjà visité
         if cell.state == CellState::Visited {
@@ -187,9 +187,9 @@ impl MazeMap {
             cell.state = new_state;
         }
 
-        //println!("Cell x,y : {},{}", x, y);
-        //println!("update_cell: {:?}", cell);
-        //println!("grid: {:?}", self.grid);
+        // println!("Cell x,y : {},{}", x, y);
+        // println!("update_cell: {:?}", cell);
+        // println!("grid: {:?}", self.grid);
     }
 
     /// Update the player position and direction after a move
@@ -226,8 +226,8 @@ impl MazeMap {
         let interpreted = radarview;
 
         //print!("map.rs: ");
-        //println!("{:?}", interpreted);
-        //println!("{:?}", player);
+        // println!("{:?}", interpreted);
+        // println!("{:?}", player);
 
         let w = Walls {
             north: interpreted.horizontal_walls[4],
@@ -236,7 +236,7 @@ impl MazeMap {
             west:  interpreted.vertical_walls[5],
         };
 
-        //println!("{:?}", w);
+        // println!("{:?}", w);
 
 
         // On met à jour la cellule actuelle du joueur (x,y).
@@ -246,7 +246,7 @@ impl MazeMap {
         // dont la cellule centrale est la position actuelle (index 4).
         // Vous pouvez changer la logique selon l'indexation que vous utilisez.
         for (i, cell_decoded) in interpreted.cells.iter().enumerate() {
-            //println!("i: {}", i);
+            // println!("i: {}", i);
             if i == 4 {
                 continue; // On ignore la cellule centrale (le joueur est déjà traité)
             }
@@ -261,7 +261,7 @@ impl MazeMap {
             // `4` = centre, la position actuelle du joueur.
             // On calcule les offsets en fonction de la direction actuelle du joueur.
             let (dx, dy) = Self::radarview_offset_to_map_north(player.x, player.y, i, player.direction);
-            //println!("dx, dy: {},{}", dx, dy);
+            // println!("dx, dy: {},{}", dx, dy);
 
             // On crée la cellule si elle n'existe pas.
             self.get_cell_mut_or_create(dx, dy);
@@ -282,16 +282,16 @@ impl MazeMap {
                 south: interpreted.horizontal_walls[i + 3],
                 west:  interpreted.vertical_walls[i + y],
             };
-            //println!("Interpreted walls: {:?}", interpreted);
-            //println!("walls: {:?}", walls);
+            // println!("Interpreted walls: {:?}", interpreted);
+            // println!("walls: {:?}", walls);
 
 
             self.update_cell(dx, dy, walls, CellState::NotVisited);
 
-            //println!("new cell: {:?}", self.get_cell(dx, dy));
+            // println!("new cell: {:?}", self.get_cell(dx, dy));
 
         }
-        //println!("grid: {:?}", self.grid);
+        // println!("grid: {:?}", self.grid);
     }
 
     /// Fonction pour afficher la carte dans la console.
@@ -300,7 +300,7 @@ impl MazeMap {
         let grid = &self.grid;
 
         if grid.is_empty() {
-            println!("La carte est vide.");
+            // println!("La carte est vide.");
             return;
         }
 
@@ -448,7 +448,7 @@ impl MazeMap {
         // Imprimer la grille ASCII ligne par ligne
         for row in ascii_grid {
             let line: String = row.into_iter().collect();
-            println!("{}", line);
+            // println!("{}", line);
         }
     }
 
