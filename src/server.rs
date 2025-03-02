@@ -10,11 +10,11 @@ use rusty_laby::bin::network::receive_message;
 
 fn receive_and_parse_message(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
     let msg = network::receive_message(stream)?;
-    // println!("Server - received message: {}", msg);
-
+    println!("Raw received message: {:?}", msg);  // Add this debug log
     let parsed_msg = json_utils::parse_json(&msg)?;
     Ok(parsed_msg)
 }
+
 
 fn answer(stream: &mut TcpStream, response: serde_json::Value) {
     network::send_message(stream, &response.to_string()).unwrap();
@@ -36,33 +36,43 @@ fn handle_client(mut stream: TcpStream) {
     let labyrinth = get_labyrinth_mock();
     let mut actions = 0;
     println!("New connection: {}", stream.peer_addr().unwrap());
-    let parsed_msg = receive_and_parse_message(&mut stream).unwrap();
-    println!("{:?}", parsed_msg);
-    if let Some(registration) = parsed_msg.get("RegisterTeam") {
-        let response = serde_json::json!({"RegisterTeamResult":{"Ok":{"expected_players":3,"registration_token":"SECRET"}}});
-        answer(&mut stream, response);
-        println!("Registration successful. Token: SECRET");
-    }
 
-    if let Some(subscribe) = parsed_msg.get("SubscribePlayer") {
-        let response = serde_json::json!( {"SubscribePlayerResult":"Ok"});
-        answer(&mut stream, response);
-        println!("Player subscribed successfully!");
-        answerRadarView(&mut stream, &labyrinth[actions]);
-        println!("Processed radar view 1");
-        actions += 1;
-    }
+    loop {  // 👈 Keep processing messages from the same client
+        println!("Waiting for a new message...");
 
-    if let Some(action) = parsed_msg.get("Action") {
-        let response = serde_json::json!({"ActionResult":"Ok"});
-        answer(&mut stream, response);
-        println!("Action successful!");
-        answerRadarView(&mut stream, &labyrinth[actions]);
-        println!("Processed radar view {}", actions + 1);
-        actions += 1;
-    }
+        let parsed_msg = match receive_and_parse_message(&mut stream) {
+            Ok(msg) => {
+                println!("🔍 Received message: {:?}", msg);
+                msg
+            }
+            Err(err) => {
+                println!("❌ Error receiving message: {}", err);
+                break; // Exit on error
+            }
+        };
 
+        if let Some(_registration) = parsed_msg.get("RegisterTeam") {
+            let response = serde_json::json!({
+                "RegisterTeamResult": {
+                    "Ok": { "expected_players": 3, "registration_token": "SECRET" }
+                }
+            });
+            println!("Sending registration response...");
+            answer(&mut stream, response);
+            continue;
+        }
+
+        if let Some(_subscribe) = parsed_msg.get("SubscribePlayer") {
+            let response = serde_json::json!({ "SubscribePlayerResult": "Ok" });
+            println!("✅ Received SubscribePlayer, sending response...");
+            answer(&mut stream, response);
+            answerRadarView(&mut stream, &labyrinth[actions]);
+            actions += 1;
+            continue;
+        }
+    }
 }
+
 
 fn main() {
     // configure the log level; but default only error
