@@ -13,17 +13,17 @@ use rusty_laby::bin::challengehandler::ChallengeHandler;
 fn main() -> io::Result<()> {
     let stream = TcpStream::connect(ADDRESS)?;
     println!("Connected to server...");
-    let mut curr = false;
+    let mut getTeamSize = false;
     let mut players_number = 3;
     let mut ui_enabled = false;
     //Handle params
     for arg in env::args() {
-        if curr {
+        if getTeamSize {
             players_number = arg.parse().unwrap();
-            curr = false;
+            getTeamSize = false;
         }
         if arg == "--team-size" {
-            curr = true;
+            getTeamSize = true;
         }
 
         if arg == "--ui" {
