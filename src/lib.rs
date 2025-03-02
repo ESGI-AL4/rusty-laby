@@ -178,10 +178,10 @@ impl GameStreamHandler {
 
 
                     let mut moove: Vec<String> = vec![];
-                    let mut moove2: Vec<String> = vec![];
+                    let mut moove_fallback: Vec<String> = vec![];
                     // 2) (Option) Décider d'une action (ex: MoveTo "Front")
                     if pretty.vertical_walls[6] == Open {
-                        moove2.push("Right".to_string());
+                        moove_fallback.push("Right".to_string());
                         // println!("DEBUG>>>>>Right is open");
                         let direction = self.player.direction.relative_to_absolute("Right");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
@@ -190,7 +190,7 @@ impl GameStreamHandler {
                         }
                     }
                     if pretty.vertical_walls[5] == Open {
-                        moove2.push("Left".to_string());
+                        moove_fallback.push("Left".to_string());
                         // println!("DEBUG>>>>>Left is open");
                         let direction = self.player.direction.relative_to_absolute("Left");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
@@ -199,7 +199,7 @@ impl GameStreamHandler {
                         }
                     }
                     if pretty.horizontal_walls[4] == Open {
-                        moove2.push("Front".to_string());
+                        moove_fallback.push("Front".to_string());
                         // println!("DEBUG>>>>>Front is open");
                         let direction = self.player.direction.relative_to_absolute("Front");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
@@ -208,7 +208,7 @@ impl GameStreamHandler {
                         }
                     }
                     if pretty.horizontal_walls[7] == Open {
-                        moove2.push("Back".to_string());
+                        moove_fallback.push("Back".to_string());
                         // println!("DEBUG>>>>>Back is open");
                         let direction: Direction = self.player.direction.relative_to_absolute( "Back");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
@@ -230,7 +230,7 @@ impl GameStreamHandler {
 
                     
                     // println!("\n\n\n--------------------\n\n\n");
-                    let action: &String = if !moove.is_empty() { moove.choose(&mut rand::rng()).unwrap() } else { moove2.choose(&mut rand::rng()).unwrap() };
+                    let action: &String = if !moove.is_empty() { moove.choose(&mut rand::rng()).unwrap() } else { moove_fallback.choose(&mut rand::rng()).unwrap() };
                     let action_json = json!({"MoveTo": action});
                     // println!("Decide next action: {:?}", action);
 
