@@ -1,106 +1,96 @@
-use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use rusty_laby::bin::network;
 use rusty_laby::bin::json_utils;
-use rusty_laby::bin::radarview::{decode_radar_view, encode_radar_view, interpret_radar_view, serialize_radar_view, DecodedCell, PrettyRadarView};
-use std::io;
+use rusty_laby::bin::radarview::PrettyRadarView;
 use rusty_laby::bin::labyrinth_mock::get_labyrinth_mock;
-
-use rusty_laby::bin::network::receive_message;
+use serde_json::json;
+use std::io;
+use std::sync::Arc;
 
 fn receive_and_parse_message(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
     let msg = network::receive_message(stream)?;
-    println!("Raw received message: {:?}", msg);  // Add this debug log
-    let parsed_msg = json_utils::parse_json(&msg)?;
-    Ok(parsed_msg)
+    println!("Raw received message: {:?}", msg);
+    json_utils::parse_json(&msg)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("JSON parse error: {}", e)))
 }
-
 
 fn answer(stream: &mut TcpStream, response: serde_json::Value) {
     network::send_message(stream, &response.to_string()).unwrap();
+    println!("Message sent to client : {:?}", response);
 }
 
-fn full_encode_radar_view(radarView: &PrettyRadarView) -> String {
-    let (h,v,c) = serialize_radar_view(radarView);
-    let string = encode_radar_view(&h, &v, &c);
-    return string;
+fn answer_radar_view(stream: &mut TcpStream, radar_view: &PrettyRadarView) {
+    let encoded = format!("{:?}", radar_view);
+    answer(stream, json!({"RadarView": encoded}));
 }
-
-fn answerRadarView(stream: &mut TcpStream, radarView: &PrettyRadarView) {
-    let response = serde_json::json!({"RadarView": full_encode_radar_view(radarView)});
-    answer(stream, response);
-}
-
 
 fn handle_client(mut stream: TcpStream) {
-    let labyrinth = get_labyrinth_mock();
-    let mut actions = 0;
-    println!("New connection: {}", stream.peer_addr().unwrap());
+    let mock_views = Arc::new(get_labyrinth_mock());
+    let mut current_view = 0;
+    let mut game_started = false;
 
-    loop {  // 👈 Keep processing messages from the same client
-        println!("Waiting for a new message...");
-
+    loop {
         let parsed_msg = match receive_and_parse_message(&mut stream) {
-            Ok(msg) => {
-                println!("🔍 Received message: {:?}", msg);
-                msg
-            }
-            Err(err) => {
-                println!("❌ Error receiving message: {}", err);
-                break; // Exit on error
-            }
+            Ok(msg) => msg,
+            Err(_) => break,
         };
 
-        if let Some(_registration) = parsed_msg.get("RegisterTeam") {
-            let response = serde_json::json!({
+        // Handle RegisterTeam
+        if parsed_msg.get("RegisterTeam").is_some() {
+            answer(&mut stream, json!({
                 "RegisterTeamResult": {
-                    "Ok": { "expected_players": 3, "registration_token": "SECRET" }
+                    "Ok": {"expected_players": 3, "registration_token": "SECRET"}
                 }
-            });
-            println!("Sending registration response...");
-            answer(&mut stream, response);
+            }));
             continue;
         }
 
-        if let Some(_subscribe) = parsed_msg.get("SubscribePlayer") {
-            let response = serde_json::json!({ "SubscribePlayerResult": "Ok" });
-            println!("✅ Received SubscribePlayer, sending response...");
-            answer(&mut stream, response);
-            answerRadarView(&mut stream, &labyrinth[actions]);
-            actions += 1;
+        // Handle SubscribePlayer
+        if parsed_msg.get("SubscribePlayer").is_some() {
+            answer(&mut stream, json!({ "SubscribePlayerResult": "Ok" }));
+
+            if !game_started {
+                game_started = true;
+                // Send first mock view
+                if let Some(view) = mock_views.get(current_view) {
+                    answer_radar_view(&mut stream, view);
+                }
+            }
             continue;
         }
+
+        // Handle MoveTo actions
+        if let Some(action_value) = parsed_msg.get("MoveTo") {
+            if let Some(action) = action_value.as_str() {
+                // Simple mock progression through views
+                current_view = (current_view + 1) % mock_views.len();
+
+                // Send next mock view
+                if let Some(view) = mock_views.get(current_view) {
+                    answer_radar_view(&mut stream, view);
+                }
+
+                answer(&mut stream, json!({"status": "OK"}));
+                continue;
+            }
+        }
+
+        println!("Unknown message: {:?}", parsed_msg);
     }
 }
-
 
 fn main() {
-    // configure the log level; but default only error
+    let listener = TcpListener::bind("localhost:8778").unwrap();
     println!("Server started");
-    match init() {
-        Ok(_) => {
-            println!("server done");
-        }
-        Err(_) => {
-            println!("server error");
-        }
-    }
-}
 
-fn init() -> std::io::Result<()> {
-    let listener = TcpListener::bind("localhost:8778")?;
-
-    // accept connections and process them serially
     for stream in listener.incoming() {
-        println!("New connection");
-        let stream = stream.unwrap();
-        handle_client(stream);
+        match stream {
+            Ok(stream) => {
+                std::thread::spawn(move || {
+                    handle_client(stream);
+                });
+            }
+            Err(e) => println!("Connection failed: {}", e),
+        }
     }
-    println!("server done");
-    Ok(())
 }
-
-
-
-
-

@@ -59,7 +59,7 @@ impl TeamRegistration {
         let msg = self.build_subscribe_message(player_name, registration_token);
         println!("Server to send: {}", msg);
         network::send_message(&mut stream, &msg)?;
-        println!("Subscribe message sent to server!");
+        println!("✅ Sent SubscribePlayer, waiting for server response...");
         self.wait_for_subscription_result(&mut stream)
     }
 
