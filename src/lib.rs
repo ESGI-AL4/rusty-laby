@@ -1,12 +1,14 @@
 use std::any::Any;
-use bin::direction;
+use bin::{challengehandler, direction};
 use serde_json::json;
 use std::io;
 use std::io::{BufRead, Write};
 use std::net::TcpStream;
 use rand::seq::{IndexedRandom, SliceRandom};
+use std::sync::Arc;
+use std::sync::RwLock;
 
-mod bin;
+pub mod bin;
 
 // On importe piston_window
 use piston_window::{
@@ -36,20 +38,25 @@ pub const ADDRESS: &str = "localhost:8778";
 pub struct GameStreamHandler {
     stream: TcpStream,
     pub map: MazeMap,      // La carte
-    pub player: Player,    // Le joueur (position + orientation)
+    pub player: Player,   // Le joueur (position + orientation)
+    pub challenge_handler:Arc<RwLock<ChallengeHandler>>,
+    pub user_id: usize,
+    pub ui_enabled: bool,
     // Ajout: la fenêtre Piston
     pub window: Option<PistonWindow>,
 }
 
 impl GameStreamHandler {
 
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: TcpStream, challenge_handler: Arc<RwLock<ChallengeHandler>>, user_id: usize, ui_enabled: bool) -> Self {
         Self {
             stream,
             map: MazeMap::new(),
             // Imaginons qu'on démarre en (0,0), orienté North
             player: Player::new(0, 0, Direction::North),
-
+            challenge_handler,
+            user_id,
+            ui_enabled,
             window: None, // pas encore initialisé
         }
     }
@@ -68,7 +75,7 @@ impl GameStreamHandler {
 
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
         let msg = network::receive_message(&mut self.stream)?;
-        println!("Server - received message: {}", msg);
+        // println!("Server - received message: {}", msg);
 
         let parsed_msg = json_utils::parse_json(&msg)?;
         Ok(parsed_msg)
@@ -76,7 +83,7 @@ impl GameStreamHandler {
 
     fn send_action(&mut self, action: &serde_json::Value) -> io::Result<()> {
         let action_request = json!({ "Action": action }).to_string();
-        println!("Client - Action to server: {}", action_request);
+        // println!("Client - Action to server: {}", action_request);
         network::send_message(&mut self.stream, &action_request)?;
         Ok(())
     }
@@ -90,14 +97,14 @@ impl GameStreamHandler {
                 //println!("Cells:       {:?}", c);
 
                 let pretty = interpret_radar_view(&h, &v, &c);
-                println!("--- Interpreted RadarView ---");
-                println!("Horizontal walls: {:?}", pretty.horizontal_walls);
-                println!("Vertical walls:   {:?}", pretty.vertical_walls);
-                println!("Cells(decodées)  : {:?}", pretty.cells);
+                // println!("--- Interpreted RadarView ---");
+                // println!("Horizontal walls: {:?}", pretty.horizontal_walls);
+                // println!("Vertical walls:   {:?}", pretty.vertical_walls);
+                // println!("Cells(decodées)  : {:?}", pretty.cells);
 
                 // (Optionnel) Pour un style "Undefined, Rien, Undefined"
                 let cells_str = visualize_cells_like_prof(&pretty.cells);
-                println!("{}", cells_str);
+                // println!("{}", cells_str);
 
                 let ascii = visualize_radar_ascii(&pretty);
                 //println!("--- ASCII Radar ---\n{}", ascii);
@@ -108,7 +115,7 @@ impl GameStreamHandler {
 
             }
             Err(e) => {
-                eprintln!("Erreur lors du décodage du RadarView: {}", e);
+                // eprintln!("Erreur lors du décodage du RadarView: {}", e);
                 // Retourner une valeur par défaut
                 PrettyRadarView {
                     horizontal_walls: vec![],
@@ -121,15 +128,16 @@ impl GameStreamHandler {
 
     /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
-        let mut challenge_handler = ChallengeHandler::new();
+        let mut win: Option<PistonWindow> = None;
         let mut challenge_count = 0;
-
-        if self.window.is_none() {
-            // on peut paniquer ou le faire nous-même
-            eprintln!("PistonWindow not initialized, call init_piston() first!");
-            return Ok(());
+        if self.ui_enabled {
+            if self.window.is_none() {
+                // on peut paniquer ou le faire nous-même
+                eprintln!("PistonWindow not initialized, call init_piston() first!");
+                return Ok(());
+            }
+            win = Some(self.window.take().unwrap()); // on récupère la fenêtre localement
         }
-        let mut win = self.window.take().unwrap(); // on récupère la fenêtre localement
 
         loop {
 
@@ -137,9 +145,9 @@ impl GameStreamHandler {
 
             // Gestion des erreurs d'action
             if let Some(action_error) = parsed_msg.get("ActionError") {
-                println!("ActionError - from server: {:?}", action_error);
+                // println!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
-                    println!("Impossible de passer: mur");
+                    // println!("Impossible de passer: mur");
                     continue;
                 } else {
                     return Err(io::Error::new(
@@ -154,74 +162,80 @@ impl GameStreamHandler {
                 if let Some(radar_str) = radar_value.as_str() {
 
                     if let Some(radar_view) = parsed_msg.get("RadarView") {
-                        println!("RadarView received: {:?}", radar_view);
+                        // println!("RadarView received: {:?}", radar_view);
                     }
 
                     // 1) Process RadarView
                     let pretty = self.process_radar_view(radar_str);
 
-                    println!("player walls: ");
-                    println!("     {:?}", pretty.horizontal_walls[4]);
-                    println!("{:?}  /*/   {:?}", pretty.vertical_walls[5], pretty.vertical_walls[6]);
-                    println!("     {:?}", pretty.horizontal_walls[7]);
+                    // println!("player walls: ");
+                    // println!("     {:?}", pretty.horizontal_walls[4]);
+                    // println!("{:?}  /*/   {:?}", pretty.vertical_walls[5], pretty.vertical_walls[6]);
+                    // println!("     {:?}", pretty.horizontal_walls[7]);
 
                     // Met à jour la carte en se basant sur ce RadarView
                     self.map.update_from_radar(&pretty, &mut self.player);
 
 
                     let mut moove: Vec<String> = vec![];
-
+                    let mut moove2: Vec<String> = vec![];
                     // 2) (Option) Décider d'une action (ex: MoveTo "Front")
                     if pretty.vertical_walls[6] == Open {
-                        println!("DEBUG>>>>>Right is open");
+                        moove2.push("Right".to_string());
+                        // println!("DEBUG>>>>>Right is open");
                         let direction = self.player.direction.relative_to_absolute("Right");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            println!("DEBUG>>>>>Right is not visited");
+                            // println!("DEBUG>>>>>Right is not visited");
                             moove.push("Right".to_string());
                         }
                     }
                     if pretty.vertical_walls[5] == Open {
-                        println!("DEBUG>>>>>Left is open");
+                        moove2.push("Left".to_string());
+                        // println!("DEBUG>>>>>Left is open");
                         let direction = self.player.direction.relative_to_absolute("Left");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            println!("DEBUG>>>>>Left is not visited");
+                            // println!("DEBUG>>>>>Left is not visited");
                             moove.push("Left".to_string());
                         }
                     }
                     if pretty.horizontal_walls[4] == Open {
-                        println!("DEBUG>>>>>Front is open");
+                        moove2.push("Front".to_string());
+                        // println!("DEBUG>>>>>Front is open");
                         let direction = self.player.direction.relative_to_absolute("Front");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            println!("DEBUG>>>>>Front is not visited");
+                            // println!("DEBUG>>>>>Front is not visited");
                             moove.push("Front".to_string());
                         }
                     }
                     if pretty.horizontal_walls[7] == Open {
-                        println!("DEBUG>>>>>Back is open");
+                        moove2.push("Back".to_string());
+                        // println!("DEBUG>>>>>Back is open");
                         let direction: Direction = self.player.direction.relative_to_absolute( "Back");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            println!("DEBUG>>>>>Back is not visited");
+                            // println!("DEBUG>>>>>Back is not visited");
                             moove.push("Back".to_string()); 
                         }
                     }
 
-                    println!("moove: {:?}", moove);
+                    // println!("moove: {:?}", moove);
                     let mut back = false;
                     if moove.is_empty() && !self.player.directions_path.is_empty() {
-                        println!("DEBUG>>>>>DECIDED TO MOVE BACK ON PATH");
+                        // println!("DEBUG>>>>>DECIDED TO MOVE BACK ON PATH");
                         if let Some(move_back) = self.player.directions_path.pop() {
                             back = true;
                             moove.push(move_back.clone());
                             self.player.path.pop();
                         }
                     }
+
                     
-                    let action = moove.choose(&mut rand::rng()).unwrap();
+                    // println!("\n\n\n--------------------\n\n\n");
+                    let action: &String = if !moove.is_empty() { moove.choose(&mut rand::rng()).unwrap() } else { moove2.choose(&mut rand::rng()).unwrap() };
                     let action_json = json!({"MoveTo": action});
-                    println!("Decide next action: {:?}", action);
+                    // println!("Decide next action: {:?}", action);
 
                     // Print Player
-                    println!("Player: {:?}", self.player);
+                    // println!("Player: {:?}", self.player);
 
                     // 2) Envoyer l'action
                     if !back {
@@ -233,21 +247,24 @@ impl GameStreamHandler {
                     self.map.update_player(&mut self.player, &action);
 
                     // Print Player après l'update
-                    println!("Player: {:?}", self.player);
+                    // println!("Player: {:?}", self.player);
 
                     // Print Map
-                    self.map.display_map(Option::from((self.player.x, self.player.y)), &self.player);
+                    // self.map.display_map(Option::from((self.player.x, self.player.y)), &self.player);
+                    if self.ui_enabled && win.is_some() {
+                        if let Some(win) = win.as_mut() {
+                            if let Some(event) = win.next() {
+                                // 1) dessiner
+                                if let Some(_r) = event.render_args() {
+                                    // on dessine
+                                    win.draw_2d(&event, |context, graphics, _device| {
+                                        clear([0.0, 0.0, 0.0, 1.0], graphics);
 
-                    if let Some(event) = win.next() {
-                        // 1) dessiner
-                        if let Some(_r) = event.render_args() {
-                            // on dessine
-                            win.draw_2d(&event, |context, graphics, _device| {
-                                clear([0.0, 0.0, 0.0, 1.0], graphics);
-
-                                // On appelle la fonction piston de la map
-                                self.map.draw_piston(context, graphics, self.player.x, self.player.y, &self.player);
-                            });
+                                        // On appelle la fonction piston de la map
+                                        self.map.draw_piston(context, graphics, self.player.x, self.player.y, &self.player);
+                                    });
+                                }
+                            }
                         }
                     }
 
@@ -264,7 +281,7 @@ impl GameStreamHandler {
             }
 
             // Gestion des challenges et des secrets
-            challenge_handler.process_message(&parsed_msg, &mut self.stream, &mut challenge_count)?;
+            self.challenge_handler.write().unwrap().process_message(&parsed_msg, &mut self.stream, &mut challenge_count, self.user_id)?;
         }
     }
 }
@@ -275,25 +292,25 @@ impl GameStreamHandler {
 #[test]
 fn test_radar_ieys() {
     let code = "rAeaksua//8a8aa";
-    println!("RadarView code: {:?}", code);
+    // println!("RadarView code: {:?}", code);
 
     match decode_radar_view(code) {
         Ok((h, v, c)) => {
-            println!("Horizontals = {:?}", h);
-            println!("Verticals   = {:?}", v);
-            println!("Cells           = {:?}", c);
+            // println!("Horizontals = {:?}", h);
+            // println!("Verticals   = {:?}", v);
+            // println!("Cells           = {:?}", c);
 
             let rv = interpret_radar_view(&h, &v, &c);
-            println!("Horizontal walls: {:?}", rv.horizontal_walls);
-            println!("Vertical   walls: {:?}", rv.vertical_walls);
+            // println!("Horizontal walls: {:?}", rv.horizontal_walls);
+            // println!("Vertical   walls: {:?}", rv.vertical_walls);
 
             // Affiche "Undefined, Rien..." etc.
-            println!("{:?}", rv.cells);
+            // println!("{:?}", rv.cells);
             let cells_str = visualize_cells_like_prof(&rv.cells);
-            println!("{}", cells_str);
+            // println!("{}", cells_str);
 
             let ascii = visualize_radar_ascii(&rv);
-            println!("ASCII:\n{}", ascii);
+            // println!("ASCII:\n{}", ascii);
 
 
             // Log the graph structure
