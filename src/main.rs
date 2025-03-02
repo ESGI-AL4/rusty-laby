@@ -38,7 +38,7 @@ fn main() -> io::Result<()> {
 
     let challenge_handler = Arc::new(RwLock::new(ChallengeHandler::new(players_number)));
 
-    if players_number > 2 {
+    if players_number >= 2 {
     let mut handlers = vec![];
         for i in 0..players_number {
             let name = format!("rusty_player{}", i);
@@ -66,9 +66,10 @@ fn main() -> io::Result<()> {
             game_stream.init_piston();
         }
         // *** On init Piston ici ***
-        let _ = GameStreamHandler::handle(&mut game_stream);
+        let err = GameStreamHandler::handle(&mut game_stream);
+        println!("Error: {:?}", err);
     }
-
+    println!("Game over");
     Ok(())
 }
 

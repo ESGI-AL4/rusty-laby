@@ -10,3 +10,4 @@ pub mod player;
 pub mod cellstate;
 pub mod walls;
 pub mod cell;
+pub mod labyrinth_mock;
