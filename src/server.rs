@@ -1,11 +1,17 @@
 use std::net::{TcpListener, TcpStream};
 use rusty_laby::bin::network;
 use rusty_laby::bin::json_utils;
-use rusty_laby::bin::radarview::PrettyRadarView;
+use rusty_laby::bin::radarview::{PrettyRadarView, encode_radar_view, serialize_radar_view};
 use rusty_laby::bin::labyrinth_mock::get_labyrinth_mock;
 use serde_json::json;
 use std::io;
 use std::sync::Arc;
+
+fn full_encode_radar_view(view: &PrettyRadarView) -> String {
+    let (h, v, c) = serialize_radar_view(view);
+    let encoded = encode_radar_view(&h, &v, &c);
+    encoded
+}
 
 fn receive_and_parse_message(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
     let msg = network::receive_message(stream)?;
@@ -20,7 +26,7 @@ fn answer(stream: &mut TcpStream, response: serde_json::Value) {
 }
 
 fn answer_radar_view(stream: &mut TcpStream, radar_view: &PrettyRadarView) {
-    let encoded = format!("{:?}", radar_view);
+    let encoded = full_encode_radar_view(radar_view);
     answer(stream, json!({"RadarView": encoded}));
 }
 
@@ -60,11 +66,13 @@ fn handle_client(mut stream: TcpStream) {
         }
 
         // Handle MoveTo actions
-        if let Some(action_value) = parsed_msg.get("MoveTo") {
-            if let Some(action) = action_value.as_str() {
+        if let Some(action_value) = parsed_msg.get("Action") {
                 // Simple mock progression through views
-                current_view = (current_view + 1) % mock_views.len();
-
+                current_view = current_view + 1;
+                //If we reach the exit of the labyrinth, we stop the game
+                if(current_view >= mock_views.len()) {
+                    break;
+                }
                 // Send next mock view
                 if let Some(view) = mock_views.get(current_view) {
                     answer_radar_view(&mut stream, view);
@@ -72,7 +80,6 @@ fn handle_client(mut stream: TcpStream) {
 
                 answer(&mut stream, json!({"status": "OK"}));
                 continue;
-            }
         }
 
         println!("Unknown message: {:?}", parsed_msg);
