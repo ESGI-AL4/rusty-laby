@@ -9,15 +9,67 @@ use std::env;
 use rusty_laby::bin::team_registration::TeamRegistration;
 use rusty_laby::bin::challengehandler::ChallengeHandler;
 
+/*!
+ * # Client de jeu Rusty Laby
+ *
+ * Ce module contient la fonction principale qui gère la connexion au serveur de jeu,
+ * l'enregistrement de l'équipe, le traitement des arguments de la ligne de commande et
+ * le lancement des gestionnaires de flux de jeu pour chaque joueur.
+ *
+ * ## Fonctionnalités
+ *
+ * - Connexion au serveur de jeu via TCP.
+ * - Enregistrement de l'équipe à l'aide de `TeamRegistration`.
+ * - Support multi-joueurs en créant un thread par joueur si le nombre de joueurs est supérieur ou égal à 2.
+ * - Option d'activation de l'interface utilisateur (UI) via l'argument `--ui`.
+ * - Partage du gestionnaire de défis (`ChallengeHandler`) entre les threads à l'aide de `Arc` et `RwLock`.
+ *
+ * ## Arguments de la ligne de commande
+ *
+ * - `--team-size <nombre>` : Définit le nombre de joueurs dans l'équipe (par défaut : 3).
+ * - `--ui` : Active l'interface utilisateur.
+ *
+ * ## Déroulement
+ *
+ * 1. Établissement d'une connexion TCP avec le serveur.
+ * 2. Traitement des arguments pour configurer la taille de l'équipe et l'activation de l'UI.
+ * 3. Enregistrement de l'équipe et récupération d'un token.
+ * 4. Pour plusieurs joueurs, création de threads individuels pour gérer les flux de jeu.
+ * 5. Pour un seul joueur, le flux de jeu est traité dans le thread principal.
+ * 6. Affichage du résultat final de la partie.
+ */
+
 #[allow(unused_variables)]
+/// Point d'entrée du client de jeu Rusty Laby.
+///
+/// Cette fonction établit une connexion avec le serveur de jeu, traite les arguments
+/// de la ligne de commande pour configurer la taille de l'équipe et l'activation de l'UI,
+/// enregistre l'équipe et lance les gestionnaires de flux de jeu pour chaque joueur.
+///
+/// # Arguments de la ligne de commande
+///
+/// - `--team-size` : Doit être suivi d'un nombre précisant le nombre de joueurs (défaut : 3).
+/// - `--ui` : Active l'interface utilisateur si présent.
+///
+/// # Retour
+///
+/// * `io::Result<()>` - Retourne `Ok(())` en cas de succès, ou une erreur en cas d'échec.
+///
+/// # Exemple
+///
+/// ```bash
+/// $ cargo run -- --team-size 4 --ui
+/// ```
 fn main() -> io::Result<()> {
+    // Établissement de la connexion avec le serveur de jeu.
     let stream = TcpStream::connect(ADDRESS)?;
     println!("Connected to server...");
     let mut getTeamSize = false;
     let mut players_number = 3;
     let mut ui_enabled = false;
     let mut game_winned = true;
-    //Handle params
+
+    // Traitement des arguments de la ligne de commande.
     for arg in env::args() {
         if getTeamSize {
             players_number = arg.parse().unwrap();
@@ -31,16 +83,18 @@ fn main() -> io::Result<()> {
             ui_enabled = true;
         }
     }
+
+    // Enregistrement de l'équipe auprès du serveur.
     let mut registration = TeamRegistration::new("rusty-ocho", stream);
     let token = registration.register()?;
     println!("Registration successful. Token: {}", token);
 
-    
-
+    // Création d'un gestionnaire de défis partagé entre les threads.
     let challenge_handler = Arc::new(RwLock::new(ChallengeHandler::new(players_number)));
 
+    // Pour les équipes multi-joueurs, création d'un thread par joueur.
     if players_number >= 2 {
-    let mut handlers = vec![];
+        let mut handlers = vec![];
         for i in 0..players_number {
             let name = format!("rusty_player{}", i);
             let game_stream = TcpStream::connect(ADDRESS)?;
@@ -54,6 +108,7 @@ fn main() -> io::Result<()> {
             handlers.push(handler);
         }
 
+        // Attente de la fin de tous les threads.
         for handler in handlers {
             match handler.join() {
                 Err(e) => {
@@ -64,6 +119,7 @@ fn main() -> io::Result<()> {
             }
         }
     } else {
+        // Pour un seul joueur, le flux de jeu est géré dans le thread principal.
         let game_stream = TcpStream::connect(ADDRESS)?;
         registration.subscribe_player("rusty_player", &token, game_stream.try_clone()?)?;
         println!("Player subscribed successfully!");
@@ -72,7 +128,7 @@ fn main() -> io::Result<()> {
         if ui_enabled {
             game_stream.init_piston();
         }
-        // *** On init Piston ici ***
+        // Lancement du traitement du flux de jeu.
         let result = GameStreamHandler::handle(&mut game_stream);
         match result {
             Err(e) =>{
@@ -82,6 +138,8 @@ fn main() -> io::Result<()> {
             _ => {}
         }
     }
+
+    // Affichage du résultat final de la partie.
     if game_winned {
         println!("Game wonned!");
     } else {
@@ -89,4 +147,3 @@ fn main() -> io::Result<()> {
     }
     Ok(())
 }
-

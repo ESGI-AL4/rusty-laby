@@ -1,4 +1,30 @@
+/*!
+ * # Module de visualisation du RadarView
+ *
+ * Ce module fournit des fonctions pour convertir une structure `PrettyRadarView` en une
+ * représentation ASCII, ainsi que pour formater et visualiser les cellules décodées.
+ *
+ * Les fonctions disponibles permettent :
+ * - D'afficher une représentation ASCII du RadarView.
+ * - D'afficher une représentation des cellules, ligne par ligne.
+ * - De formater une cellule décodée en une chaîne descriptive.
+ */
+
 use crate::bin::radarview::{CellEntity, CellNature, DecodedCell, PrettyRadarView, Wall};
+
+/// Génère une représentation ASCII du RadarView.
+///
+/// Cette fonction parcourt les murs horizontaux et verticaux de la structure `PrettyRadarView`
+/// et construit une chaîne de caractères qui représente visuellement le labyrinthe.
+///
+/// # Arguments
+///
+/// * `prv` - Une référence à une instance de `PrettyRadarView` contenant les informations du radar.
+///
+/// # Retour
+///
+/// Une `String` contenant la représentation ASCII du radar.
+///
 
 pub fn visualize_radar_ascii(prv: &PrettyRadarView) -> String {
     let mut out = String::new();
@@ -38,6 +64,20 @@ pub fn visualize_radar_ascii(prv: &PrettyRadarView) -> String {
     out
 }
 
+/// Visualise les cellules décodées de manière structurée par ligne.
+///
+/// Cette fonction crée une représentation textuelle des cellules, en les regroupant par ligne
+/// et en utilisant la fonction `format_decoded_cell` pour formater chaque cellule.
+///
+/// # Arguments
+///
+/// * `cells` - Un slice de `DecodedCell` représentant les cellules décodées.
+///
+/// # Retour
+///
+/// Une `String` contenant la visualisation des cellules, ligne par ligne.
+///
+
 pub fn visualize_cells_like_prof(cells: &[DecodedCell]) -> String {
     let mut s = String::new();
     s.push_str("Les cellules (par ligne):\n");
@@ -53,6 +93,21 @@ pub fn visualize_cells_like_prof(cells: &[DecodedCell]) -> String {
     }
     s
 }
+
+/// Formate une cellule décodée en une chaîne descriptive.
+///
+/// Cette fonction utilise la nature et l'entité de la cellule pour générer une description textuelle.
+/// Elle retourne "Undefined" si la cellule est non définie, ou "Rien" si elle ne contient aucune
+/// information pertinente.
+///
+/// # Arguments
+///
+/// * `c` - Une instance de `DecodedCell` à formater.
+///
+/// # Retour
+///
+/// Une `String` décrivant la cellule.
+///
 
 pub fn format_decoded_cell(c: DecodedCell) -> String {
     let nature_str = match c.nature {
