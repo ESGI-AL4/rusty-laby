@@ -131,9 +131,9 @@ impl GameStreamHandler {
             
             // Gestion des erreurs d'action
             if let Some(action_error) = parsed_msg.get("ActionError") {
-                 eprintln!("ActionError - from server: {:?}", action_error);
+                //  eprintln!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
-                    println!("Impossible de passer: mur");
+                    // println!("Impossible de passer: mur");
                     continue;
                 } else {
                     return Err(io::Error::new(
