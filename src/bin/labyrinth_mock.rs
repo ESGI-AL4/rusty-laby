@@ -1,5 +1,12 @@
 use crate::bin::radarview::{PrettyRadarView, Wall, DecodedCell, CellNature, CellEntity};
 
+/// Génère une représentation simulée d'un labyrinthe sous forme de vecteur de `PrettyRadarView`.
+///
+/// Cette fonction retourne un vecteur contenant plusieurs instances de `PrettyRadarView`,
+/// chacune définissant une configuration particulière de murs horizontaux et verticaux, ainsi que
+/// l'état des cellules correspondantes. Ces données mock sont utiles pour les tests et la simulation
+/// du comportement du labyrinthe.
+
 pub fn get_labyrinth_mock() -> Vec<PrettyRadarView> {
     let radar_views: Vec<PrettyRadarView> = vec![
         PrettyRadarView {
