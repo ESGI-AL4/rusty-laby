@@ -57,7 +57,6 @@ impl TeamRegistration {
         mut stream: TcpStream,
     ) -> io::Result<String> {
         let msg = self.build_subscribe_message(player_name, registration_token);
-        // println!("Server to send: {}", msg);
         network::send_message(&mut stream, &msg)?;
         println!("✅ Sent SubscribePlayer, waiting for server response...");
         self.wait_for_subscription_result(&mut stream)

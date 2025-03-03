@@ -75,7 +75,6 @@ impl GameStreamHandler {
 
     fn receive_and_parse_message(&mut self) -> io::Result<serde_json::Value> {
         let msg = network::receive_message(&mut self.stream)?;
-        // println!("Server - received message: {}", msg);
 
         let parsed_msg = json_utils::parse_json(&msg)?;
         Ok(parsed_msg)
@@ -83,7 +82,6 @@ impl GameStreamHandler {
 
     fn send_action(&mut self, action: &serde_json::Value) -> io::Result<()> {
         let action_request = json!({ "Action": action }).to_string();
-        // println!("Client - Action to server: {}", action_request);
         network::send_message(&mut self.stream, &action_request)?;
         Ok(())
     }
@@ -91,31 +89,18 @@ impl GameStreamHandler {
     fn process_radar_view(&mut self, radar_str: &str) -> PrettyRadarView {
         match decode_radar_view(radar_str) {
             Ok((h, v, c)) => {
-                //println!("=== Decoded Raw RadarView ===");
-                //println!("Horizontals: {:?}", h);
-                //println!("Verticals:   {:?}", v);
-                //println!("Cells:       {:?}", c);
 
                 let pretty = interpret_radar_view(&h, &v, &c);
-                // println!("--- Interpreted RadarView ---");
-                // println!("Horizontal walls: {:?}", pretty.horizontal_walls);
-                // println!("Vertical walls:   {:?}", pretty.vertical_walls);
-                // println!("Cells(decodées)  : {:?}", pretty.cells);
 
                 // (Optionnel) Pour un style "Undefined, Rien, Undefined"
                 let cells_str = visualize_cells_like_prof(&pretty.cells);
-                // println!("{}", cells_str);
 
                 let ascii = visualize_radar_ascii(&pretty);
-                //println!("--- ASCII Radar ---\n{}", ascii);
-                //println!("=====================================");
-
-                //return pretty;
                 pretty
 
             }
             Err(e) => {
-                // eprintln!("Erreur lors du décodage du RadarView: {}", e);
+                eprintln!("Erreur lors du décodage du RadarView: {}", e);
                 // Retourner une valeur par défaut
                 PrettyRadarView {
                     horizontal_walls: vec![],
@@ -141,14 +126,12 @@ impl GameStreamHandler {
         }
 
         loop {
-            // println!("IN THE LOOP");
-
-            // println!("receive_and_parse_message");
             let parsed_msg = self.receive_and_parse_message()?;
-            // println!("parsed_msg {:?}", parsed_msg);
+
+            
             // Gestion des erreurs d'action
             if let Some(action_error) = parsed_msg.get("ActionError") {
-                // println!("ActionError - from server: {:?}", action_error);
+                //  eprintln!("ActionError - from server: {:?}", action_error);
                 if action_error == "CannotPassThroughWall" {
                     // println!("Impossible de passer: mur");
                     continue;
@@ -164,17 +147,8 @@ impl GameStreamHandler {
             if let Some(radar_value) = parsed_msg.get("RadarView") {
                 if let Some(radar_str) = radar_value.as_str() {
 
-                    if let Some(radar_view) = parsed_msg.get("RadarView") {
-                        // println!("RadarView received: {:?}", radar_view);
-                    }
-
                     // 1) Process RadarView
                     let pretty = self.process_radar_view(radar_str);
-
-                    // println!("player walls: ");
-                    // println!("     {:?}", pretty.horizontal_walls[4]);
-                    // println!("{:?}  /*/   {:?}", pretty.vertical_walls[5], pretty.vertical_walls[6]);
-                    // println!("     {:?}", pretty.horizontal_walls[7]);
 
                     // Met à jour la carte en se basant sur ce RadarView
                     self.map.update_from_radar(&pretty, &mut self.player);
@@ -187,65 +161,50 @@ impl GameStreamHandler {
                         return Ok(());
                     }
 
-                    let mut moove: Vec<String> = vec![];
-                    let mut moove_fallback: Vec<String> = vec![];
+                    let mut moove: Vec<String> = vec![]; // Possible moves to opened non visited cells
+                    let mut moove_fallback: Vec<String> = vec![]; // All possible moves to opened cells if no non visited cells and path is empty
                     // 2) (Option) Décider d'une action (ex: MoveTo "Front")
                     if pretty.vertical_walls[6] == Open {
                         moove_fallback.push("Right".to_string());
-                        // println!("DEBUG>>>>>Right is open");
                         let direction = self.player.direction.relative_to_absolute("Right");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            // println!("DEBUG>>>>>Right is not visited");
                             moove.push("Right".to_string());
                         }
                     }
                     if pretty.vertical_walls[5] == Open {
                         moove_fallback.push("Left".to_string());
-                        // println!("DEBUG>>>>>Left is open");
                         let direction = self.player.direction.relative_to_absolute("Left");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            // println!("DEBUG>>>>>Left is not visited");
                             moove.push("Left".to_string());
                         }
                     }
                     if pretty.horizontal_walls[4] == Open {
                         moove_fallback.push("Front".to_string());
-                        // println!("DEBUG>>>>>Front is open");
                         let direction = self.player.direction.relative_to_absolute("Front");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            // println!("DEBUG>>>>>Front is not visited");
                             moove.push("Front".to_string());
                         }
                     }
                     if pretty.horizontal_walls[7] == Open {
                         moove_fallback.push("Back".to_string());
-                        // println!("DEBUG>>>>>Back is open");
                         let direction: Direction = self.player.direction.relative_to_absolute( "Back");
                         if self.map.is_cell_visited(self.player.clone(), direction) == false {
-                            // println!("DEBUG>>>>>Back is not visited");
                             moove.push("Back".to_string()); 
                         }
                     }
 
-                    // println!("moove: {:?}", moove);
                     let mut back = false;
+                    // If we can't move to a non visited cell, we add the move to go back on path (If path is not empty)
                     if moove.is_empty() && !self.player.directions_path.is_empty() {
-                        // println!("DEBUG>>>>>DECIDED TO MOVE BACK ON PATH");
                         if let Some(move_back) = self.player.directions_path.pop() {
                             back = true;
                             moove.push(move_back.clone());
                             self.player.path.pop();
                         }
                     }
-
-                    
-                    // println!("\n\n\n--------------------\n\n\n");
+                    // use classic moves or fallback if no classic moves
                     let action: &String = if !moove.is_empty() { moove.choose(&mut rand::rng()).unwrap() } else { moove_fallback.choose(&mut rand::rng()).unwrap() };
                     let action_json = json!({"MoveTo": action});
-                    // println!("Decide next action: {:?}", action);
-
-                    // Print Player
-                    // println!("Player: {:?}", self.player);
 
                     // 2) Envoyer l'action
                     if !back {
@@ -256,11 +215,6 @@ impl GameStreamHandler {
                     //update player position and direction
                     self.map.update_player(&mut self.player, &action);
 
-                    // Print Player après l'update
-                    // println!("Player: {:?}", self.player);
-
-                    // Print Map
-                    // self.map.display_map(Option::from((self.player.x, self.player.y)), &self.player);
                     if self.ui_enabled && win.is_some() {
                         if let Some(win) = win.as_mut() {
                             if let Some(event) = win.next() {
