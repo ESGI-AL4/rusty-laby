@@ -16,6 +16,7 @@ fn main() -> io::Result<()> {
     let mut getTeamSize = false;
     let mut players_number = 3;
     let mut ui_enabled = false;
+    let mut game_winned = true;
     //Handle params
     for arg in env::args() {
         if getTeamSize {
@@ -54,7 +55,13 @@ fn main() -> io::Result<()> {
         }
 
         for handler in handlers {
-            handler.join().unwrap();
+            match handler.join() {
+                Err(e) => {
+                    println!("Error: {:?}", e);
+                    game_winned = false;
+                },
+                _ => {}
+            }
         }
     } else {
         let game_stream = TcpStream::connect(ADDRESS)?;
@@ -66,10 +73,20 @@ fn main() -> io::Result<()> {
             game_stream.init_piston();
         }
         // *** On init Piston ici ***
-        let err = GameStreamHandler::handle(&mut game_stream);
-        println!("Error: {:?}", err);
+        let result = GameStreamHandler::handle(&mut game_stream);
+        match result {
+            Err(e) =>{
+                println!("Error: {}", e);
+                game_winned = false;
+            },
+            _ => {}
+        }
     }
-    println!("Game over");
+    if game_winned {
+        println!("Game wonned!");
+    } else {
+        println!("Game lost!");
+    }
     Ok(())
 }
 
