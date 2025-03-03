@@ -112,8 +112,6 @@ pub fn decode_radar_view(radar_b64: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>),
 }
 
 pub fn encode_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> String {
-    // bytes.reverse();
-    //reverse only slices h and v
     let mut h = h.to_vec();
     let mut v = v.to_vec();
     h.reverse();
