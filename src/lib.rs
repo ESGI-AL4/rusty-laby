@@ -161,8 +161,8 @@ impl GameStreamHandler {
                         return Ok(());
                     }
 
-                    let mut moove: Vec<String> = vec![];
-                    let mut moove_fallback: Vec<String> = vec![];
+                    let mut moove: Vec<String> = vec![]; // Possible moves to opened non visited cells
+                    let mut moove_fallback: Vec<String> = vec![]; // All possible moves to opened cells if no non visited cells and path is empty
                     // 2) (Option) Décider d'une action (ex: MoveTo "Front")
                     if pretty.vertical_walls[6] == Open {
                         moove_fallback.push("Right".to_string());
@@ -194,6 +194,7 @@ impl GameStreamHandler {
                     }
 
                     let mut back = false;
+                    // If we can't move to a non visited cell, we add the move to go back on path (If path is not empty)
                     if moove.is_empty() && !self.player.directions_path.is_empty() {
                         if let Some(move_back) = self.player.directions_path.pop() {
                             back = true;
@@ -201,7 +202,7 @@ impl GameStreamHandler {
                             self.player.path.pop();
                         }
                     }
-
+                    // use classic moves or fallback if no classic moves
                     let action: &String = if !moove.is_empty() { moove.choose(&mut rand::rng()).unwrap() } else { moove_fallback.choose(&mut rand::rng()).unwrap() };
                     let action_json = json!({"MoveTo": action});
 
