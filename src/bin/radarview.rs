@@ -111,6 +111,20 @@ pub fn decode_radar_view(radar_b64: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>),
     Ok((horizontals, verticals, cells))
 }
 
+pub fn encode_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> String {
+    // bytes.reverse();
+    //reverse only slices h and v
+    let mut h = h.to_vec();
+    let mut v = v.to_vec();
+    h.reverse();
+    v.reverse();
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&h);
+    bytes.extend_from_slice(&v);
+    bytes.extend_from_slice(&c);
+    encode(&bytes)
+}
+
 pub fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
     let mut walls = Vec::with_capacity(12);
     let mut bits_24 = 0u32;
@@ -129,6 +143,28 @@ pub fn decode_walls(bytes: &[u8]) -> Vec<Wall> {
     }
     walls
 }
+
+pub fn encode_walls(walls: &[Wall]) -> Vec<u8> {
+    let mut bits_24 = 0u32;
+    
+    for (i, &wall) in walls.iter().enumerate() {
+        let shift = 24 - 2 * (i + 1);
+        let val = match wall {
+            Wall::Undefined => 0b00,
+            Wall::Open => 0b01,
+            Wall::Wall => 0b10,
+        };
+        bits_24 |= (val << shift);
+    }
+
+    let mut bytes = Vec::with_capacity(3);
+    for i in 0..3 {
+        let shift = 16 - 8 * i;
+        bytes.push(((bits_24 >> shift) & 0xFF) as u8);
+    }
+    bytes
+}
+
 
 pub fn decode_one_cell(n: u8) -> DecodedCell {
     if n == 0xF {
@@ -156,7 +192,27 @@ pub fn decode_one_cell(n: u8) -> DecodedCell {
     }
 }
 
-fn decode_cells(bytes: &[u8]) -> Vec<DecodedCell> {
+pub fn encode_one_cell(cell: DecodedCell) -> u8 {
+    if cell.nature == CellNature::Invalid {
+        return 0xF;
+    }
+    let mut n = 0u8;
+    n |= match cell.nature {
+        CellNature::None => 0b00,
+        CellNature::Hint => 0b01,
+        CellNature::Goal => 0b10,
+        CellNature::Invalid => 0b11,
+    } << 2;
+    n |= match cell.entity {
+        CellEntity::None => 0b00,
+        CellEntity::Ally => 0b01,
+        CellEntity::Enemy => 0b10,
+        CellEntity::Monster => 0b11,
+    };
+    n
+}
+
+pub fn decode_cells(bytes: &[u8]) -> Vec<DecodedCell> {
     let mut bits_40 = 0u64;
     for &b in bytes {
         bits_40 = (bits_40 << 8) | (b as u64);
@@ -172,10 +228,33 @@ fn decode_cells(bytes: &[u8]) -> Vec<DecodedCell> {
     result
 }
 
+pub fn encode_cells(cells: &[DecodedCell]) -> Vec<u8> {
+    let mut bits_40 = 0u64;
+    for (i, &cell) in cells.iter().enumerate() {
+        let shift = 36 - 4 * (i);
+        let nib = encode_one_cell(cell) as u64;
+        bits_40 |= (nib << shift);
+    }
+    let mut bytes = Vec::with_capacity(5);
+    for i in 0..5 {
+        let shift = 8 * (4 - i);
+        let byte = ((bits_40 >> shift) & 0xFF) as u8;
+        bytes.push(byte);
+    }
+    bytes
+}
+
 pub fn interpret_radar_view(h: &[u8], v: &[u8], c: &[u8]) -> PrettyRadarView {
     PrettyRadarView {
         horizontal_walls: decode_walls(h),
         vertical_walls: decode_walls(v),
         cells: decode_cells(c),
     }
+}
+
+pub fn serialize_radar_view(view: &PrettyRadarView) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let h = encode_walls(&view.horizontal_walls); 
+    let v = encode_walls(&view.vertical_walls);
+    let c = encode_cells(&view.cells);
+    (h, v, c)
 }

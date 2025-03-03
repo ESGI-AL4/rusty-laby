@@ -128,6 +128,7 @@ impl GameStreamHandler {
 
     /// Boucle principale
     pub fn handle(&mut self) -> io::Result<()> {
+        // println!("IN THE HANDLE");
         let mut win: Option<PistonWindow> = None;
         let mut challenge_count = 0;
         if self.ui_enabled {
@@ -140,9 +141,11 @@ impl GameStreamHandler {
         }
 
         loop {
+            // println!("IN THE LOOP");
 
+            // println!("receive_and_parse_message");
             let parsed_msg = self.receive_and_parse_message()?;
-
+            // println!("parsed_msg {:?}", parsed_msg);
             // Gestion des erreurs d'action
             if let Some(action_error) = parsed_msg.get("ActionError") {
                 // println!("ActionError - from server: {:?}", action_error);
@@ -176,6 +179,13 @@ impl GameStreamHandler {
                     // Met à jour la carte en se basant sur ce RadarView
                     self.map.update_from_radar(&pretty, &mut self.player);
 
+
+                    //Check if on the exit
+                    let current_cell = pretty.cells[4];
+                    if current_cell.nature == bin::radarview::CellNature::Goal {
+                        println!("Exit found by player {}", self.user_id);
+                        return Ok(());
+                    }
 
                     let mut moove: Vec<String> = vec![];
                     let mut moove_fallback: Vec<String> = vec![];
